@@ -660,7 +660,7 @@ class _ResourceViewRenderObject extends CustomCalendarRenderObject {
     );
     _updateNamePainter(span);
     _namePainter.layout(maxWidth: size.width);
-    final double startXPosition = (size.width - _namePainter.width) / 2;
+    const double startXPosition = 8.0; // Left padding of 8 pixels
     final double startYPosition =
         resourceViewSettings.showAvatar
             ? (yPosition + (actualItemHeight / 2)) +
@@ -789,7 +789,7 @@ class _ResourceViewRenderObject extends CustomCalendarRenderObject {
     _updateNamePainter(span);
     _namePainter.layout(maxWidth: innerCircleWidth);
     startXPosition =
-        innerCircleXPosition + ((innerCircleWidth - _namePainter.width) / 2);
+        innerCircleXPosition + 4.0; // Left padding of 4 pixels for short name
     startYPosition =
         innerCircleYPosition + ((innerCircleHeight - _namePainter.height) / 2);
     _namePainter.paint(canvas, Offset(startXPosition, startYPosition));

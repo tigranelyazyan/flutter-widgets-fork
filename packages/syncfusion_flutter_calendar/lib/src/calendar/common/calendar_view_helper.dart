@@ -312,6 +312,11 @@ class CalendarViewHelper {
     ResourceViewSettings resourceViewSettings,
     int resourceCount,
   ) {
+    /// If height is explicitly set, use it
+    if (resourceViewSettings.height != null) {
+      return resourceViewSettings.height!;
+    }
+
     /// The combined padding value between the circle and the display name text
     final double textPadding = resourceViewSettings.showAvatar ? 10 : 0;
 

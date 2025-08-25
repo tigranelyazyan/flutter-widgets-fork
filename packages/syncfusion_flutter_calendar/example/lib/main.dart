@@ -38,6 +38,8 @@ class _MyHomePageState extends State<MyHomePage> {
         monthViewSettings: const MonthViewSettings(
           appointmentDisplayMode: MonthAppointmentDisplayMode.appointment,
         ),
+        // The grid lines (calendar "net") now have softer color with opacity
+        // This is controlled by the cellBorderColor in the theme
       ),
     );
   }

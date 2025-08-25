@@ -54,7 +54,8 @@ class SfCalendarThemeColors extends SfCalendarThemeData {
   Color? get weekNumberBackgroundColor => colorScheme.onSurface[11];
 
   @override
-  Color? get cellBorderColor => colorScheme.onSurface[42];
+  Color? get cellBorderColor =>
+      colorScheme.onSurface[42]?.withValues(alpha: 0.3);
 
   @override
   Color? get todayHighlightColor => colorScheme.primary;

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 /// the [SfCalendar].
 ///
 /// Allows to customize the [visibleResourceCount],[showAvatar],
-/// [size], and [displayNameTextStyle] in resource view of calendar.
+/// [size], [width], [height], and [displayNameTextStyle] in resource view of calendar.
 ///
 /// See also:
 /// * [CalendarResource], which holds the data for the resource in the
@@ -70,11 +70,81 @@ class ResourceViewSettings with Diagnosticable {
   /// The properties allows to customize the resource view of [SfCalendar].
   const ResourceViewSettings({
     this.size = 75,
+    this.width,
+    this.height,
     this.visibleResourceCount = -1,
     this.showAvatar = true,
     this.displayNameTextStyle,
   }) : assert(size >= 0),
-       assert(visibleResourceCount >= -1);
+       assert(visibleResourceCount >= -1),
+       assert(width == null || width >= 0),
+       assert(height == null || height >= 0);
+
+  /// The width of the resource view panel in timeline views of [SfCalendar].
+  ///
+  /// If null, uses the [size] parameter for width.
+  /// Defaults to null.
+  ///
+  /// See also:
+  /// * [CalendarResource], the object which holds the data for the resource in
+  /// the calendar
+  /// * [CalendarDataSource.resources], which set and handle the resource
+  /// collection for the calendar.
+  /// * [SfCalendar.resourceViewHeaderBuilder], which allows to set custom
+  /// widget for the resource view header.in calendar.
+  /// * Knowledge base: [How to customize the resource view](https://www.syncfusion.com/kb/12351/how-to-customize-the-resource-view-in-the-flutter-calendar)
+  /// * Knowledge base: [How to add resources](https://www.syncfusion.com/kb/12070/how-to-add-resources-in-the-flutter-calendar)
+  ///
+  /// ```dart
+  ///@override
+  ///  Widget build(BuildContext context) {
+  ///    return Container(
+  ///      child: SfCalendar(
+  ///        view: CalendarView.timelineMonth,
+  ///        dataSource: _getCalendarDataSource(),
+  ///        resourceViewSettings: ResourceViewSettings(
+  ///            width: 32,
+  ///            height: 200,
+  ///      ),
+  ///    );
+  ///  }
+  ///}
+  ///
+  /// ```
+  final double? width;
+
+  /// The height of each resource item in timeline views of [SfCalendar].
+  ///
+  /// If null, uses the [size] parameter for height calculation.
+  /// Defaults to null.
+  ///
+  /// See also:
+  /// * [CalendarResource], the object which holds the data for the resource in
+  /// the calendar
+  /// * [CalendarDataSource.resources], which set and handle the resource
+  /// collection for the calendar.
+  /// * [SfCalendar.resourceViewHeaderBuilder], which allows to set custom
+  /// widget for the resource view header.in calendar.
+  /// * Knowledge base: [How to customize the resource view](https://www.syncfusion.com/kb/12351/how-to-customize-the-resource-view-in-the-flutter-calendar)
+  /// * Knowledge base: [How to add resources](https://www.syncfusion.com/kb/12070/how-to-add-resources-in-the-flutter-calendar)
+  ///
+  /// ```dart
+  ///@override
+  ///  Widget build(BuildContext context) {
+  ///    return Container(
+  ///      child: SfCalendar(
+  ///        view: CalendarView.timelineMonth,
+  ///        dataSource: _getCalendarDataSource(),
+  ///        resourceViewSettings: ResourceViewSettings(
+  ///            width: 32,
+  ///            height: 200,
+  ///      ),
+  ///    );
+  ///  }
+  ///}
+  ///
+  /// ```
+  final double? height;
 
   /// The number of resources to be displayed in the available screen height in
   /// [SfCalendar]
@@ -235,6 +305,8 @@ class ResourceViewSettings with Diagnosticable {
       otherStyle = other;
     }
     return otherStyle.size == size &&
+        otherStyle.width == width &&
+        otherStyle.height == height &&
         otherStyle.visibleResourceCount == visibleResourceCount &&
         otherStyle.showAvatar == showAvatar &&
         otherStyle.displayNameTextStyle == displayNameTextStyle;
@@ -250,6 +322,8 @@ class ResourceViewSettings with Diagnosticable {
       ),
     );
     properties.add(DoubleProperty('size', size));
+    properties.add(DoubleProperty('width', width));
+    properties.add(DoubleProperty('height', height));
     properties.add(DiagnosticsProperty<bool>('showAvatar', showAvatar));
     properties.add(IntProperty('visibleResourceCount', visibleResourceCount));
   }
@@ -258,6 +332,8 @@ class ResourceViewSettings with Diagnosticable {
   int get hashCode {
     return Object.hash(
       size,
+      width,
+      height,
       visibleResourceCount,
       showAvatar,
       displayNameTextStyle,

@@ -3364,7 +3364,10 @@ class _SfCalendarState extends State<SfCalendar>
             _view,
           );
           final double resourceViewSize =
-              isResourceEnabled ? widget.resourceViewSettings.size : 0;
+              isResourceEnabled
+                  ? (widget.resourceViewSettings.width ??
+                      widget.resourceViewSettings.size)
+                  : 0;
           if ((!_isRTL && updatedPosition.dx < resourceViewSize) ||
               (_isRTL && updatedPosition.dx > _minWidth - resourceViewSize)) {
             final double viewHeaderHeight =
@@ -5455,9 +5458,13 @@ class _SfCalendarState extends State<SfCalendar>
       if (isResourceEnabled &&
           ((isRTL &&
                   localPosition.dx >
-                      (_minWidth - widget.resourceViewSettings.size)) ||
+                      (_minWidth -
+                          (widget.resourceViewSettings.width ??
+                              widget.resourceViewSettings.size))) ||
               (!isRTL &&
-                  localPosition.dx < widget.resourceViewSettings.size)) &&
+                  localPosition.dx <
+                      (widget.resourceViewSettings.width ??
+                          widget.resourceViewSettings.size))) &&
           localPosition.dy > startPosition! &&
           (CalendarViewHelper.shouldRaiseCalendarTapCallback(widget.onTap) ||
               CalendarViewHelper.shouldRaiseCalendarLongPressCallback(
@@ -9552,7 +9559,10 @@ class _SfCalendarState extends State<SfCalendar>
       _view,
     );
     final double resourceViewSize =
-        isResourceEnabled ? widget.resourceViewSettings.size : 0;
+        isResourceEnabled
+            ? (widget.resourceViewSettings.width ??
+                widget.resourceViewSettings.size)
+            : 0;
     final DateTime currentViewDate =
         _currentViewVisibleDates[(_currentViewVisibleDates.length / 2)
             .truncate()];
