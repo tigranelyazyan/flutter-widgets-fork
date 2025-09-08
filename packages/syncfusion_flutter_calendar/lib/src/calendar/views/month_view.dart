@@ -1297,45 +1297,10 @@ class _MonthViewRenderObject extends CustomCalendarRenderObject {
     double cellHeight,
     double cellWidth,
   ) {
-    yPosition = cellHeight;
-    _linePainter.strokeWidth = linePadding;
+    _linePainter.strokeWidth = linePadding * 0.5; // Reduced line weight
     _linePainter.color = cellBorderColor ?? calendarTheme.cellBorderColor!;
-    xPosition = isRTL ? 0 : weekNumberPanelWidth;
-    final double finalXPosition =
-        isRTL ? size.width - weekNumberPanelWidth : size.width;
-    canvas.drawLine(
-      Offset(xPosition, linePadding),
-      Offset(finalXPosition, linePadding),
-      _linePainter,
-    );
-    for (int i = 0; i < rowCount - 1; i++) {
-      canvas.drawLine(
-        Offset(
-          isMobilePlatform
-              ? isRTL
-                  ? 0
-                  : weekNumberPanelWidth
-              : 0,
-          yPosition,
-        ),
-        Offset(
-          isMobilePlatform
-              ? isRTL
-                  ? size.width - weekNumberPanelWidth
-                  : size.width
-              : size.width,
-          yPosition,
-        ),
-        _linePainter,
-      );
-      yPosition += cellHeight;
-    }
 
-    canvas.drawLine(
-      Offset(0, size.height - linePadding),
-      Offset(size.width, size.height - linePadding),
-      _linePainter,
-    );
+    // Removed all horizontal lines - only draw vertical lines
     xPosition =
         weekNumberPanelWidth != 0 && !isRTL ? weekNumberPanelWidth : cellWidth;
     canvas.drawLine(

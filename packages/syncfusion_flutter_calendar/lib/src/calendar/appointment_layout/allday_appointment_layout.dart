@@ -204,13 +204,9 @@ class _AllDayAppointmentLayoutState extends State<AllDayAppointmentLayout> {
       final double cellWidth =
           (widget.width - widget.timeLabelWidth) / widget.visibleDates.length;
 
-      final double cellEndPadding = CalendarViewHelper.getCellEndPadding(
-        widget.calendar.cellEndPadding,
-        widget.isMobilePlatform,
-      );
-
-      /// Calculate the maximum appointment width based on cell end padding.
-      final double maxAppointmentWidth = cellWidth - cellEndPadding;
+      // Removed cellEndPadding as it's no longer needed
+      /// Calculate the maximum appointment width to fill the entire cell.
+      final double maxAppointmentWidth = cellWidth;
       for (int i = 0; i < keys.length; i++) {
         final int index = keys[i];
         final DateTime date = widget.visibleDates[index];
@@ -1005,7 +1001,7 @@ class _AllDayAppointmentRenderObject extends CustomCalendarRenderObject {
       calendar.cellEndPadding,
       isMobilePlatform,
     );
-    final double maxAppointmentWidth = _cellWidth - cellEndPadding;
+    final double maxAppointmentWidth = _cellWidth;
     final List<int> keys = moreAppointmentIndex.keys.toList();
     for (int i = 0; i < keys.length; i++) {
       if (child == null) {
@@ -1587,7 +1583,7 @@ class _AllDayAppointmentRenderObject extends CustomCalendarRenderObject {
       rect = Rect.fromLTRB(
         xValue,
         0,
-        xValue + _cellWidth - cellEndPadding,
+        xValue + _cellWidth,
         kAllDayAppointmentHeight - 1,
       );
     }

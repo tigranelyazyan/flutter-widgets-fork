@@ -824,6 +824,14 @@ class _TimelineRenderObject extends CustomCalendarRenderObject {
         resourceCollection != null && resourceCollection!.isNotEmpty;
     final int visibleDatesCount = visibleDates.length;
     final bool isTimelineMonth = visibleDatesCount > DateTime.daysPerWeek;
+
+    // Draw weekend highlighting first (behind everything else)
+    _drawWeekendHighlighting(
+      context.canvas,
+      isResourceEnabled,
+      visibleDatesCount,
+    );
+
     _minMaxExceeds(
       visibleDatesCount,
       isTimelineMonth,
@@ -974,22 +982,18 @@ class _TimelineRenderObject extends CustomCalendarRenderObject {
     bool isResourceEnabled,
     int visibleDatesCount,
   ) {
-    _linePainter.strokeWidth = 0.5;
+    _linePainter.strokeWidth = 0.15;
     _linePainter.strokeCap = StrokeCap.round;
     _linePainter.color = cellBorderColor ?? calendarTheme.cellBorderColor!;
+
+    // Removed horizontal line at the top
+    // Removed horizontal lines for resource separation
+
+    // Draw only vertical lines
     double startXPosition = 0;
-    double endXPosition = size.width;
-    double startYPosition = 0.5;
-    double endYPosition = 0.5;
-
-    final Offset start = Offset(startXPosition, startYPosition);
-    final Offset end = Offset(endXPosition, endYPosition);
-    canvas.drawLine(start, end, _linePainter);
-
-    startXPosition = 0;
-    endXPosition = 0;
-    startYPosition = 0;
-    endYPosition = size.height;
+    double endXPosition = 0;
+    const double startYPosition = 0;
+    final double endYPosition = size.height;
     if (isRTL) {
       startXPosition = size.width;
       endXPosition = size.width;
@@ -1021,23 +1025,121 @@ class _TimelineRenderObject extends CustomCalendarRenderObject {
       canvas.drawPoints(PointMode.lines, points, _linePainter);
     }
 
-    /// Draws the vertical line to separate the slots based on resource count.
-    if (isResourceEnabled) {
-      startXPosition = 0;
-      endXPosition = size.width;
-      startYPosition = resourceItemHeight;
-      for (int i = 0; i < resourceCollection!.length; i++) {
-        canvas.drawLine(
-          Offset(startXPosition, startYPosition),
-          Offset(endXPosition, startYPosition),
-          _linePainter,
-        );
-        startYPosition += resourceItemHeight;
-      }
-    }
+    // Draw today's vertical line
+    _drawTodayVerticalLine(canvas, size, visibleDatesCount, isResourceEnabled);
 
     if (calendarCellNotifier.value != null) {
       _addMouseHovering(canvas, size, isResourceEnabled);
+    }
+  }
+
+  void _drawTodayVerticalLine(
+    Canvas canvas,
+    Size size,
+    int visibleDatesCount,
+    bool isResourceEnabled,
+  ) {
+    final DateTime today = DateTime.now();
+    final int todayIndex = visibleDates.indexWhere(
+      (date) => isSameDate(date, today),
+    );
+
+    if (todayIndex == -1) {
+      return; // Today is not in the visible dates
+    }
+
+    // Calculate the position for today's vertical line
+    final double todayXPosition =
+        (todayIndex * timeIntervalWidth) + (timeIntervalWidth / 2);
+
+    // Set up the painter for today's line
+    final Paint todayLinePainter =
+        Paint()
+          ..strokeWidth = 1.0
+          ..color = Colors.blue
+          ..style = PaintingStyle.stroke;
+
+    // Draw the vertical line for today
+    canvas.drawLine(
+      Offset(todayXPosition, 0),
+      Offset(todayXPosition, size.height),
+      todayLinePainter,
+    );
+  }
+
+  /// Draws weekend highlighting for timeline columns
+  void _drawWeekendHighlighting(
+    Canvas canvas,
+    bool isResourceEnabled,
+    int visibleDatesCount,
+  ) {
+    // Get non-working days from time slot view settings
+    final List<int> nonWorkingDays = timeSlotViewSettings.nonWorkingDays;
+
+    // Default weekend days if nonWorkingDays is empty
+    final List<int> weekendDays =
+        nonWorkingDays.isNotEmpty
+            ? nonWorkingDays
+            : [DateTime.saturday, DateTime.sunday];
+
+    // Set up the painter for weekend highlighting
+    final Paint weekendPainter =
+        Paint()
+          ..style = PaintingStyle.fill
+          ..color = Colors.grey.withValues(alpha: 0.1); // Light grey background
+
+    final double columnWidth = timeIntervalWidth;
+    final double totalHeight =
+        isResourceEnabled
+            ? resourceCollection!.length * resourceItemHeight
+            : size.height;
+
+    // Draw weekend highlighting for each visible date
+    for (int i = 0; i < visibleDatesCount; i++) {
+      final DateTime date = visibleDates[i];
+
+      // Check if this date is a weekend day
+      if (weekendDays.contains(date.weekday)) {
+        double leftPosition = i * columnWidth;
+        double rightPosition = leftPosition + columnWidth;
+
+        // Handle RTL layout
+        if (isRTL) {
+          leftPosition = size.width - leftPosition;
+          rightPosition = size.width - rightPosition;
+        }
+
+        // Draw weekend background for each resource row if resource view is enabled
+        if (isResourceEnabled) {
+          for (
+            int resourceIndex = 0;
+            resourceIndex < resourceCollection!.length;
+            resourceIndex++
+          ) {
+            final double topPosition = resourceIndex * resourceItemHeight;
+            final double bottomPosition = topPosition + resourceItemHeight;
+
+            final Rect weekendRect = Rect.fromLTRB(
+              leftPosition,
+              topPosition,
+              rightPosition,
+              bottomPosition,
+            );
+
+            canvas.drawRect(weekendRect, weekendPainter);
+          }
+        } else {
+          // Draw weekend background for the entire column
+          final Rect weekendRect = Rect.fromLTRB(
+            leftPosition,
+            0,
+            rightPosition,
+            totalHeight,
+          );
+
+          canvas.drawRect(weekendRect, weekendPainter);
+        }
+      }
     }
   }
 
@@ -1384,7 +1486,7 @@ class TimelineViewHeaderView extends CustomPainter {
     );
 
     if (isTimelineMonth) {
-      _hoverPainter.strokeWidth = 0.5;
+      _hoverPainter.strokeWidth = 0.15;
       _hoverPainter.strokeCap = StrokeCap.round;
       _hoverPainter.color = cellBorderColor ?? calendarTheme.cellBorderColor!;
       canvas.drawLine(Offset.zero, Offset(size.width, 0), _hoverPainter);
@@ -1609,6 +1711,7 @@ class TimelineViewHeaderView extends CustomPainter {
       _xPosition += childWidth;
     }
 
+    _hoverPainter.strokeWidth = 0.15;
     _hoverPainter.color = cellBorderColor ?? calendarTheme.cellBorderColor!;
     canvas.restore();
     canvas.drawLine(

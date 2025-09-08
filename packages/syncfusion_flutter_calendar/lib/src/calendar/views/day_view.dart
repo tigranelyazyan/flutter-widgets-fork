@@ -810,28 +810,12 @@ class _TimeSlotRenderObject extends CustomCalendarRenderObject {
   }
 
   void _drawTimeSlots(Canvas canvas, int visibleDatesCount) {
-    double y = timeIntervalHeight;
     _linePainter.style = PaintingStyle.stroke;
-    _linePainter.strokeWidth = 0.5;
+    _linePainter.strokeWidth = 0.25;
     _linePainter.strokeCap = StrokeCap.round;
     _linePainter.color = cellBorderColor ?? calendarTheme.cellBorderColor!;
 
-    final double startXPosition = isRTL ? 0 : timeLabelWidth;
-    final double endXPosition =
-        isRTL ? size.width - timeLabelWidth : size.width;
-    for (int i = 1; i <= horizontalLinesCount; i++) {
-      canvas.drawLine(
-        Offset(startXPosition, y),
-        Offset(endXPosition, y),
-        _linePainter,
-      );
-
-      y += timeIntervalHeight;
-      if (y == size.height) {
-        break;
-      }
-    }
-
+    // Draw only vertical lines (removed horizontal lines)
     double x = isRTL ? _cellWidth : timeLabelWidth + _cellWidth;
     for (int i = 0; i < visibleDatesCount - 1; i++) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), _linePainter);

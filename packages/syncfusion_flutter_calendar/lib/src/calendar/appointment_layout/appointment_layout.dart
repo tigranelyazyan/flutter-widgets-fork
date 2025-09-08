@@ -636,9 +636,7 @@ class _AppointmentLayoutState extends State<AppointmentLayout> {
           Rect.fromLTWH(
             widget.isRTL ? xPosition + cellEndPadding : xPosition,
             yPosition,
-            appointmentWidth - cellEndPadding > 0
-                ? appointmentWidth - cellEndPadding
-                : 0,
+            appointmentWidth > 0 ? appointmentWidth : 0,
             appointmentHeight > 1 ? appointmentHeight - 1 : 0,
           ),
           cornerRadius,
@@ -680,7 +678,7 @@ class _AppointmentLayoutState extends State<AppointmentLayout> {
         Rect.fromLTWH(
           widget.isRTL ? xPosition + cellEndPadding : xPosition,
           yPosition,
-          cellWidth - cellEndPadding > 0 ? cellWidth - cellEndPadding : 0,
+          cellWidth > 0 ? cellWidth : 0,
           appointmentHeight - 1,
         ),
         Radius.zero,
@@ -754,8 +752,8 @@ class _AppointmentLayoutState extends State<AppointmentLayout> {
       final double mins = appointment.actualStartTime.minute - viewStartMinutes;
       final int totalMins = ((totalHours * 60) + mins).toInt();
 
-      final double appointmentWidth =
-          (cellWidth - cellEndPadding) / appointmentView.maxPositions;
+      // Calculate appointment width to fill the entire cell width
+      final double appointmentWidth = cellWidth / appointmentView.maxPositions;
       if (widget.isRTL) {
         xPosition =
             column * cellWidth +
@@ -848,7 +846,7 @@ class _AppointmentLayoutState extends State<AppointmentLayout> {
         Rect.fromLTWH(
           xPosition,
           yPosition,
-          appointmentWidth > 1 ? appointmentWidth - 1 : 0,
+          appointmentWidth > 0 ? appointmentWidth : 0,
           height > 1 ? height - 1 : 0,
         ),
         cornerRadius,
@@ -907,10 +905,7 @@ class _AppointmentLayoutState extends State<AppointmentLayout> {
     final double cellWidth = widget.timeIntervalHeight;
     double xPosition = 0;
     double yPosition = 0;
-    final double cellEndPadding = CalendarViewHelper.getCellEndPadding(
-      widget.calendar.cellEndPadding,
-      widget.isMobilePlatform,
-    );
+    // Removed cellEndPadding as it's no longer needed for timeline view
     final double slotHeight =
         isResourceEnabled ? widget.resourceItemHeight! : widget.height;
     final double timelineAppointmentHeight = _getTimelineAppointmentHeight(
@@ -1006,7 +1001,8 @@ class _AppointmentLayoutState extends State<AppointmentLayout> {
         width += cellWidth;
       }
 
-      width = width - cellEndPadding;
+      // Remove unnecessary cellEndPadding subtraction to fill the entire cell
+      // width = width - cellEndPadding;
       final Radius cornerRadius = Radius.circular(
         (appointmentHeight * 0.1) > 2 ? 2 : (appointmentHeight * 0.1),
       );

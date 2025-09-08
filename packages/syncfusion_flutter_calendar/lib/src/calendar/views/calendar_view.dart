@@ -10658,6 +10658,115 @@ class _CalendarViewState extends State<_CalendarView>
     }
   }
 
+  /// Handles resource panel tap events in timeline view.
+  void _handleResourcePanelTap(
+    TapUpDetails? tapDetails,
+    LongPressStartDetails? longPressDetails,
+    bool isTapCallback,
+  ) {
+    if (isTapCallback && tapDetails != null) {
+      if (!CalendarViewHelper.shouldRaiseCalendarTapCallback(
+        widget.calendar.onTap,
+      )) {
+        return;
+      }
+
+      final CalendarResource tappedResource = _getTappedResourceFromTimeline(
+        tapDetails.localPosition.dy,
+      );
+      final List<dynamic> resourceAppointments =
+          _getSelectedResourceAppointmentsFromTimeline(tappedResource);
+      CalendarViewHelper.raiseCalendarTapCallback(
+        widget.calendar,
+        null,
+        resourceAppointments,
+        CalendarElement.resourceHeader,
+        tappedResource,
+      );
+    } else if (!isTapCallback && longPressDetails != null) {
+      if (!CalendarViewHelper.shouldRaiseCalendarLongPressCallback(
+        widget.calendar.onLongPress,
+      )) {
+        return;
+      }
+
+      final CalendarResource tappedResource = _getTappedResourceFromTimeline(
+        longPressDetails.localPosition.dy,
+      );
+      final List<dynamic> resourceAppointments =
+          _getSelectedResourceAppointmentsFromTimeline(tappedResource);
+      CalendarViewHelper.raiseCalendarLongPressCallback(
+        widget.calendar,
+        null,
+        resourceAppointments,
+        CalendarElement.resourceHeader,
+        tappedResource,
+      );
+    }
+  }
+
+  /// Returns the tapped resource details from timeline view, based on the tapped position.
+  CalendarResource _getTappedResourceFromTimeline(double tappedPosition) {
+    final double viewHeaderHeight = CalendarViewHelper.getViewHeaderHeight(
+      widget.calendar.viewHeaderHeight,
+      widget.view,
+    );
+    final double timeLabelWidth = CalendarViewHelper.getTimeLabelWidth(
+      widget.calendar.timeSlotViewSettings.timeRulerSize,
+      widget.view,
+    );
+
+    // Calculate resource item height
+    final double resourceViewSize =
+        widget.calendar.resourceViewSettings.width ??
+        widget.calendar.resourceViewSettings.size;
+    final double resourceItemHeight = CalendarViewHelper.getResourceItemHeight(
+      resourceViewSize,
+      widget.height - viewHeaderHeight - timeLabelWidth,
+      widget.calendar.resourceViewSettings,
+      widget.calendar.dataSource!.resources!.length,
+    );
+
+    // Adjust position for view header and time label
+    double adjustedPosition =
+        tappedPosition - viewHeaderHeight - timeLabelWidth;
+
+    // Add scroll offset if available
+    if (_timelineViewVerticalScrollController != null) {
+      adjustedPosition += _timelineViewVerticalScrollController!.offset;
+    }
+
+    final int index = (adjustedPosition / resourceItemHeight).truncate();
+    return widget.calendar.dataSource!.resources![index];
+  }
+
+  /// Filter and returns the appointment collection for the given resource from timeline view.
+  List<dynamic> _getSelectedResourceAppointmentsFromTimeline(
+    CalendarResource resource,
+  ) {
+    final List<dynamic> selectedResourceAppointments = <dynamic>[];
+    if (_updateCalendarStateDetails.appointments.isEmpty) {
+      return selectedResourceAppointments;
+    }
+
+    for (int i = 0; i < _updateCalendarStateDetails.appointments.length; i++) {
+      final CalendarAppointment app =
+          _updateCalendarStateDetails.appointments[i];
+      if (app.resourceIds != null &&
+          app.resourceIds!.isNotEmpty &&
+          app.resourceIds!.contains(resource.id)) {
+        selectedResourceAppointments.add(
+          CalendarViewHelper.getAppointmentDetail(
+            app,
+            widget.calendar.dataSource,
+          ),
+        );
+      }
+    }
+
+    return selectedResourceAppointments;
+  }
+
   /// Handles the tap and long press related functions for timeline view.
   AppointmentView? _handleTouchOnTimeline(
     TapUpDetails? tapDetails,
@@ -10680,6 +10789,43 @@ class _CalendarViewState extends State<_CalendarView>
       widget.calendar.viewHeaderHeight,
       widget.view,
     );
+
+    // Check if the tap is within the resource panel area
+    final bool isResourceEnabled = CalendarViewHelper.isResourceEnabled(
+      widget.calendar.dataSource,
+      widget.view,
+    );
+
+    if (isResourceEnabled) {
+      final double resourceViewSize =
+          widget.calendar.resourceViewSettings.width ??
+          widget.calendar.resourceViewSettings.size;
+      final double timeLabelWidth = CalendarViewHelper.getTimeLabelWidth(
+        widget.calendar.timeSlotViewSettings.timeRulerSize,
+        widget.view,
+      );
+
+      // Check if tap is within resource panel bounds
+      // Resource panel starts after view header and time label
+      bool isWithinResourcePanel = false;
+      if (_isRTL) {
+        // In RTL mode, resource panel is on the right side
+        isWithinResourcePanel =
+            xDetails > (widget.width - resourceViewSize) &&
+            yDetails > viewHeaderHeight + timeLabelWidth;
+      } else {
+        // In LTR mode, resource panel is on the left side
+        isWithinResourcePanel =
+            xDetails < resourceViewSize &&
+            yDetails > viewHeaderHeight + timeLabelWidth;
+      }
+
+      if (isWithinResourcePanel) {
+        // Handle resource panel tap directly
+        _handleResourcePanelTap(tapDetails, longPressDetails, isTapCallback);
+        return null;
+      }
+    }
 
     if (yDetails < viewHeaderHeight) {
       if (isTapCallback) {
@@ -14452,7 +14598,7 @@ class _TimeRulerView extends CustomPainter {
 
     xPosition = isRTL && isTimelineView ? size.width : 0;
     yPosition = timeIntervalHeight;
-    _linePainter.strokeWidth = offset;
+    _linePainter.strokeWidth = offset * 0.5; // Reduced line weight
     _linePainter.color = cellBorderColor ?? calendarTheme.cellBorderColor!;
 
     if (!isTimelineView) {
@@ -14477,7 +14623,7 @@ class _TimeRulerView extends CustomPainter {
             timeSlotViewSettings.startHour.toInt()) *
         60;
     if (isTimelineView) {
-      canvas.drawLine(Offset.zero, Offset(size.width, 0), _linePainter);
+      // Removed horizontal line at the top
       final double timelineViewWidth =
           timeIntervalHeight * horizontalLinesCount;
       for (int i = 0; i < visibleDates.length; i++) {
