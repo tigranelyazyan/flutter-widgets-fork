@@ -2366,8 +2366,13 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
                 !isTimelineView
             ? const Duration(hours: 1)
             : appointment.endTime.difference(appointment.startTime);
-    DateTime updatedEndTime =
-        isAllDay ? updateStartTime : updateStartTime.add(appointmentDuration);
+    DateTime updatedEndTime;
+    if (isAllDay) {
+      // For all-day appointments, preserve the original duration in days
+      updatedEndTime = updateStartTime.add(appointmentDuration);
+    } else {
+      updatedEndTime = updateStartTime.add(appointmentDuration);
+    }
 
     final int timeInterval = CalendarViewHelper.getTimeInterval(
       widget.calendar.timeSlotViewSettings,
@@ -5966,21 +5971,13 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
     bool isNeedDragAndDrop,
   ) {
     final _CalendarViewState currentState = _getCurrentViewByVisibleDates()!;
+    // Prevent vertical dragging of appointments - only allow horizontal dragging
+    // This prevents resource changes and only allows time/date changes
     if (currentState._hoveringAppointmentView != null &&
         currentState._hoveringAppointmentView!.appointment != null &&
         !widget.isMobilePlatform &&
         isNeedDragAndDrop) {
-      _handleAppointmentDragStart(
-        currentState._hoveringAppointmentView!.clone(),
-        isTimelineView,
-        Offset(
-          dragStartDetails.localPosition.dx,
-          dragStartDetails.localPosition.dy - widget.height,
-        ),
-        isResourceEnabled,
-        viewHeaderHeight,
-        timeLabelWidth,
-      );
+      // Skip appointment drag start for vertical drags to prevent resource changes
       return;
     }
     switch (widget.calendar.viewNavigationMode) {
@@ -6007,22 +6004,12 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
     double weekNumberPanelWidth = 0,
     bool isNeedDragAndDrop = false,
   ]) {
+    // Prevent vertical dragging of appointments - only allow horizontal dragging
+    // This prevents resource changes and only allows time/date changes
     if (_dragDetails.value.appointmentView != null &&
         !widget.isMobilePlatform &&
         isNeedDragAndDrop) {
-      _handleLongPressMove(
-        Offset(
-          dragUpdateDetails.localPosition.dx,
-          dragUpdateDetails.localPosition.dy - widget.height,
-        ),
-        isTimelineView,
-        isResourceEnabled,
-        isMonthView,
-        viewHeaderHeight,
-        timeLabelWidth,
-        resourceItemHeight,
-        weekNumberPanelWidth,
-      );
+      // Skip appointment drag update for vertical drags to prevent resource changes
       return;
     }
     switch (widget.calendar.viewNavigationMode) {
@@ -6077,18 +6064,12 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
     double weekNumberPanelWidth = 0,
     bool isNeedDragAndDrop = false,
   ]) {
+    // Prevent vertical dragging of appointments - only allow horizontal dragging
+    // This prevents resource changes and only allows time/date changes
     if (_dragDetails.value.appointmentView != null &&
         !widget.isMobilePlatform &&
         isNeedDragAndDrop) {
-      _handleLongPressEnd(
-        _dragDetails.value.position.value! - _dragDifferenceOffset!,
-        isTimelineView,
-        isResourceEnabled,
-        isMonthView,
-        viewHeaderHeight,
-        timeLabelWidth,
-        weekNumberPanelWidth,
-      );
+      // Skip appointment drag end for vertical drags to prevent resource changes
       return;
     }
     switch (widget.calendar.viewNavigationMode) {

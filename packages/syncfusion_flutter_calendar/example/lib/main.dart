@@ -38,6 +38,22 @@ class _MyHomePageState extends State<MyHomePage> {
         monthViewSettings: const MonthViewSettings(
           appointmentDisplayMode: MonthAppointmentDisplayMode.appointment,
         ),
+        // Enable drag and drop functionality
+        allowDragAndDrop: true,
+        onDragEnd: (AppointmentDragEndDetails details) {
+          print('=== Drag End Details ===');
+          print('Dropping Time: ${details.droppingTime}');
+          print('Appointment: ${details.appointment}');
+          if (details.appointment != null) {
+            final appointment = details.appointment! as Meeting;
+            print('Start Time: ${appointment.from}');
+            print('End Time: ${appointment.to}');
+            print(
+              'Duration: ${appointment.to.difference(appointment.from).inDays} days',
+            );
+          }
+          print('========================');
+        },
         // The grid lines (calendar "net") now have softer color with opacity
         // This is controlled by the cellBorderColor in the theme
       ),
@@ -52,6 +68,24 @@ class _MyHomePageState extends State<MyHomePage> {
     meetings.add(
       Meeting('Conference', startTime, endTime, const Color(0xFF0F8644), false),
     );
+
+    // Add a multi-day appointment to test duration preservation
+    final DateTime multiDayStart = DateTime(
+      today.year,
+      today.month,
+      today.day + 2,
+    );
+    final DateTime multiDayEnd = multiDayStart.add(const Duration(days: 8));
+    meetings.add(
+      Meeting(
+        'Multi-day Event',
+        multiDayStart,
+        multiDayEnd,
+        const Color(0xFF2196F3),
+        true,
+      ),
+    );
+
     return meetings;
   }
 }
@@ -99,6 +133,20 @@ class MeetingDataSource extends CalendarDataSource {
     }
 
     return meetingData;
+  }
+
+  @override
+  Object? convertAppointmentToObject(
+    Object? customData,
+    Appointment appointment,
+  ) {
+    return Meeting(
+      appointment.subject,
+      appointment.startTime,
+      appointment.endTime,
+      appointment.color,
+      appointment.isAllDay,
+    );
   }
 }
 
