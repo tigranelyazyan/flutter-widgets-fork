@@ -203,6 +203,8 @@ class SfCalendar extends StatefulWidget {
     this.showNavigationArrow = false,
     this.showDatePickerButton = false,
     this.showTodayButton = false,
+    this.headerNavigationWidget,
+    this.headerNavigationWidgetWidth,
     this.allowViewNavigation = false,
     this.showCurrentTimeIndicator = true,
     this.cellEndPadding = -1,
@@ -401,6 +403,28 @@ class SfCalendar extends StatefulWidget {
   ///
   /// ```
   final bool showTodayButton;
+
+  /// Places a custom widget alongside the navigation arrows in the calendar
+  /// header.
+  ///
+  /// The provided widget is positioned between the backward and forward
+  /// navigation arrows, allowing you to add additional controls such as action
+  /// buttons or menus near the month navigation affordances.
+  ///
+  /// When a widget is supplied, ensure that enough horizontal space is reserved
+  /// for it by setting [headerNavigationWidgetWidth] when necessary.
+  ///
+  /// Defaults to `null`.
+  final Widget? headerNavigationWidget;
+
+  /// Reserves horizontal space for [headerNavigationWidget] in the calendar
+  /// header.
+  ///
+  /// If `null`, the calendar uses the default navigation arrow width. Provide a
+  /// custom value when the widget requires additional space.
+  ///
+  /// Defaults to `null`.
+  final double? headerNavigationWidgetWidth;
 
   /// Displays an indicator that shows the current time in the time slot views
   /// of [SfCalendar]. By default, the indicator color matches the
@@ -2592,6 +2616,18 @@ class SfCalendar extends StatefulWidget {
     );
     properties.add(
       DiagnosticsProperty<bool>('showNavigationArrow', showNavigationArrow),
+    );
+    properties.add(
+      DiagnosticsProperty<Widget?>(
+        'headerNavigationWidget',
+        headerNavigationWidget,
+      ),
+    );
+    properties.add(
+      DoubleProperty(
+        'headerNavigationWidgetWidth',
+        headerNavigationWidgetWidth,
+      ),
     );
     properties.add(
       DiagnosticsProperty<ViewNavigationMode>(
@@ -7857,6 +7893,8 @@ class _SfCalendarState extends State<SfCalendar>
                   _timelineMonthWeekNumberNotifier,
                   widget.cellBorderColor,
                   widget.timeSlotViewSettings.numberOfDaysInView,
+                  widget.headerNavigationWidget,
+                  widget.headerNavigationWidgetWidth,
                 ),
               ),
             ),
@@ -8833,6 +8871,8 @@ class _SfCalendarState extends State<SfCalendar>
               _timelineMonthWeekNumberNotifier,
               widget.cellBorderColor,
               widget.timeSlotViewSettings.numberOfDaysInView,
+              widget.headerNavigationWidget,
+              widget.headerNavigationWidgetWidth,
             ),
           ),
         ),
@@ -9616,6 +9656,8 @@ class _SfCalendarState extends State<SfCalendar>
             _timelineMonthWeekNumberNotifier,
             widget.cellBorderColor,
             widget.timeSlotViewSettings.numberOfDaysInView,
+            widget.headerNavigationWidget,
+            widget.headerNavigationWidgetWidth,
           ),
         ),
       ),
@@ -10536,6 +10578,8 @@ class _CalendarHeaderView extends StatefulWidget {
     this.timelineMonthWeekNumberNotifier,
     this.cellBorderColor,
     this.numberOfDaysInView,
+    this.navigationActionWidget,
+    this.navigationActionWidth,
   );
 
   final List<DateTime> visibleDates;
@@ -10576,6 +10620,8 @@ class _CalendarHeaderView extends StatefulWidget {
   final ValueNotifier<DateTime?> timelineMonthWeekNumberNotifier;
   final Color? cellBorderColor;
   final int numberOfDaysInView;
+  final Widget? navigationActionWidget;
+  final double? navigationActionWidth;
 
   @override
   _CalendarHeaderViewState createState() => _CalendarHeaderViewState();
@@ -10632,6 +10678,12 @@ class _CalendarHeaderViewState extends State<_CalendarHeaderView> {
     double iconWidth = widget.width / 8;
     iconWidth = iconWidth > 40 ? 40 : iconWidth;
     double calendarViewWidth = 0;
+    double navigationActionWidth = 0;
+    if (widget.navigationActionWidget != null) {
+      final double? customWidth = widget.navigationActionWidth;
+      navigationActionWidth =
+          customWidth != null && customWidth > 0 ? customWidth : iconWidth;
+    }
 
     /// Assign arrow width as icon width when the navigation arrow enabled.
     if (navigationArrowEnabled) {
@@ -10705,7 +10757,11 @@ class _CalendarHeaderViewState extends State<_CalendarHeaderView> {
       final Size headerTextSize = _getTextWidgetWidth(
         headerString,
         widget.height,
-        widget.width - totalArrowWidth - todayIconWidth - padding,
+        widget.width -
+            totalArrowWidth -
+            todayIconWidth -
+            navigationActionWidth -
+            padding,
         context,
         style: widget.calendarTheme.headerTextStyle,
       );
@@ -10773,6 +10829,7 @@ class _CalendarHeaderViewState extends State<_CalendarHeaderView> {
             totalArrowWidth -
             dividerWidth -
             todayIconWidth -
+            navigationActionWidth -
             headerTextWidth -
             weekNumberPanelWidth;
 
@@ -10838,7 +10895,7 @@ class _CalendarHeaderViewState extends State<_CalendarHeaderView> {
           final Size calendarViewSize = _getTextWidgetWidth(
             _calendarViews[widget.view]!,
             widget.height,
-            widget.width - totalArrowWidth,
+            widget.width - totalArrowWidth - navigationActionWidth,
             context,
             style: const TextStyle(fontSize: defaultCalendarViewTextSize),
           );
@@ -10879,6 +10936,19 @@ class _CalendarHeaderViewState extends State<_CalendarHeaderView> {
             ? maxHeaderHeight
             : widget.height;
 
+    final bool hasNavigationAction = widget.navigationActionWidget != null;
+    final Widget navigationAction =
+        hasNavigationAction
+            ? Container(
+              alignment: Alignment.center,
+              color: headerBackgroundColor,
+              width: navigationActionWidth,
+              height: headerHeight,
+              padding: const EdgeInsets.all(2),
+              child: widget.navigationActionWidget,
+            )
+            : const SizedBox(width: 0, height: 0);
+
     if (weekNumberEnabled) {
       /// Header will render based on its text width while week number enabled.
       /// because the week number panel occupies the empty space to align the
@@ -10890,6 +10960,7 @@ class _CalendarHeaderViewState extends State<_CalendarHeaderView> {
           todayIconWidth -
           dividerWidth -
           totalArrowWidth -
+          navigationActionWidth -
           weekNumberPanelWidth -
           headerWidth;
       if (remainingWidth < 0) {
@@ -10912,8 +10983,10 @@ class _CalendarHeaderViewState extends State<_CalendarHeaderView> {
           calendarViewWidth -
           todayIconWidth -
           dividerWidth -
-          totalArrowWidth;
+          totalArrowWidth -
+          navigationActionWidth;
     }
+    headerWidth = math.max(0, headerWidth);
 
     final List<DateTime> dates = widget.visibleDates;
     if (!DateTimeHelper.canMoveToNextView(
@@ -11395,6 +11468,7 @@ class _CalendarHeaderViewState extends State<_CalendarHeaderView> {
       if (widget.isMobilePlatform) {
         rowChildren = <Widget>[
           headerText,
+          if (hasNavigationAction) navigationAction,
           weekNumberWidget,
           todayIcon,
           calendarViewIcon,
@@ -11406,13 +11480,16 @@ class _CalendarHeaderViewState extends State<_CalendarHeaderView> {
           leftArrow,
           rightArrow,
           headerText,
+          if (hasNavigationAction) navigationAction,
           weekNumberWidget,
           todayIcon,
           dividerWidget,
         ];
-        useMobilePlatformUI
-            ? rowChildren.add(calendarViewIcon)
-            : rowChildren.addAll(children);
+        if (useMobilePlatformUI) {
+          rowChildren.add(calendarViewIcon);
+        } else {
+          rowChildren.addAll(children);
+        }
       }
 
       return Row(
@@ -11429,16 +11506,21 @@ class _CalendarHeaderViewState extends State<_CalendarHeaderView> {
           todayIcon,
           weekNumberWidget,
           headerText,
+          if (hasNavigationAction) navigationAction,
         ];
       } else {
-        useMobilePlatformUI
-            ? rowChildren.add(calendarViewIcon)
-            : rowChildren.addAll(children);
-
+        if (useMobilePlatformUI) {
+          rowChildren.add(calendarViewIcon);
+        } else {
+          rowChildren.addAll(children);
+        }
         rowChildren.add(dividerWidget);
         rowChildren.add(todayIcon);
         rowChildren.add(weekNumberWidget);
         rowChildren.add(headerText);
+        if (hasNavigationAction) {
+          rowChildren.add(navigationAction);
+        }
         rowChildren.add(leftArrow);
         rowChildren.add(rightArrow);
       }
@@ -11452,6 +11534,7 @@ class _CalendarHeaderViewState extends State<_CalendarHeaderView> {
         rowChildren = <Widget>[
           leftArrow,
           headerText,
+          if (hasNavigationAction) navigationAction,
           weekNumberWidget,
           todayIcon,
           dividerWidget,
@@ -11462,14 +11545,17 @@ class _CalendarHeaderViewState extends State<_CalendarHeaderView> {
         rowChildren = <Widget>[
           leftArrow,
           headerText,
+          if (hasNavigationAction) navigationAction,
           weekNumberWidget,
           rightArrow,
           todayIcon,
           dividerWidget,
         ];
-        useMobilePlatformUI
-            ? rowChildren.add(calendarViewIcon)
-            : rowChildren.addAll(children);
+        if (useMobilePlatformUI) {
+          rowChildren.add(calendarViewIcon);
+        } else {
+          rowChildren.addAll(children);
+        }
       }
 
       return Row(
