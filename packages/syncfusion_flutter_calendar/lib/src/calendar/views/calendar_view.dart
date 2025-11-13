@@ -6924,7 +6924,7 @@ class _CalendarViewState extends State<_CalendarView>
             ? SystemMouseCursors.resizeUpDown
             : _mouseCursor == SystemMouseCursors.resizeRight ||
                 _mouseCursor == SystemMouseCursors.resizeLeft
-            ? SystemMouseCursors.resizeLeftRight
+            ? SystemMouseCursors.resizeColumn
             : _mouseCursor;
     return MouseRegion(
       cursor: currentCursor,
