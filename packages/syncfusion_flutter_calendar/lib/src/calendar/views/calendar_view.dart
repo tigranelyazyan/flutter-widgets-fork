@@ -15306,6 +15306,15 @@ class _ResizingAppointmentPainter extends CustomPainter {
         resizingDetails.value.appointmentView!.appointmentRect == null) {
       return;
     }
+    final Color? resizeBorderColor =
+        calendarTheme.resizingBorderColor ?? calendarTheme.selectionBorderColor;
+    if (resizeBorderColor == null) {
+      return;
+    }
+    final BorderSide resizeBorderSide = BorderSide(
+      color: resizeBorderColor,
+      width: 2,
+    );
     canvas.clipRect(Rect.fromLTWH(0, 0, size.width, size.height));
 
     final double scrollOffset =
@@ -15409,19 +15418,10 @@ class _ResizingAppointmentPainter extends CustomPainter {
         paintBorder(
           canvas,
           rect,
-          left: BorderSide(
-            color: calendarTheme.selectionBorderColor!,
-            width: 2,
-          ),
-          right: BorderSide(
-            color: calendarTheme.selectionBorderColor!,
-            width: 2,
-          ),
-          bottom: BorderSide(
-            color: calendarTheme.selectionBorderColor!,
-            width: 2,
-          ),
-          top: BorderSide(color: calendarTheme.selectionBorderColor!, width: 2),
+          left: resizeBorderSide,
+          right: resizeBorderSide,
+          bottom: resizeBorderSide,
+          top: resizeBorderSide,
         );
       }
     } else {
@@ -15575,10 +15575,10 @@ class _ResizingAppointmentPainter extends CustomPainter {
     paintBorder(
       canvas,
       rect,
-      left: BorderSide(color: calendarTheme.selectionBorderColor!, width: 2),
-      right: BorderSide(color: calendarTheme.selectionBorderColor!, width: 2),
-      bottom: BorderSide(color: calendarTheme.selectionBorderColor!, width: 2),
-      top: BorderSide(color: calendarTheme.selectionBorderColor!, width: 2),
+      left: resizeBorderSide,
+      right: resizeBorderSide,
+      bottom: resizeBorderSide,
+      top: resizeBorderSide,
     );
   }
 

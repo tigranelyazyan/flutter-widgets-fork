@@ -95,6 +95,8 @@ typedef _CalendarHeaderCallback = void Function(double width);
 /// It can also be customized using the properties available in
 /// [CalendarHeaderStyle][ViewHeaderStyle][MonthViewSettings]
 /// [TimeSlotViewSettings][MonthCellStyle], [AgendaStyle].
+/// Use [SfCalendarThemeData.resizingBorderColor] to control the resize/drag
+/// highlight color independently from [SfCalendarThemeData.selectionBorderColor].
 ///
 /// {@youtube 560 315 https://www.youtube.com/watch?v=3OROjbAQS8Y}
 ///

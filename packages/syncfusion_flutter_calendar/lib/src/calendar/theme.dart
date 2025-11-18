@@ -62,4 +62,7 @@ class SfCalendarThemeColors extends SfCalendarThemeData {
 
   @override
   Color? get selectionBorderColor => colorScheme.primary;
+
+  @override
+  Color? get resizingBorderColor => selectionBorderColor;
 }

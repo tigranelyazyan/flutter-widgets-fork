@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
 import '../../theme.dart';
 
 /// Applies a theme to descendant Syncfusion calendar widgets.
@@ -133,6 +134,7 @@ class SfCalendarThemeData with Diagnosticable {
     this.todayHighlightColor,
     this.weekNumberBackgroundColor,
     this.selectionBorderColor,
+    this.resizingBorderColor,
     this.weekNumberTextStyle,
     this.timeIndicatorTextStyle,
     this.allDayPanelColor,
@@ -151,6 +153,7 @@ class SfCalendarThemeData with Diagnosticable {
     Color? trailingDatesBackgroundColor,
     Color? leadingDatesBackgroundColor,
     Color? selectionBorderColor,
+    Color? resizingBorderColor,
     Color? todayHighlightColor,
     Color? viewHeaderBackgroundColor,
     Color? weekNumberBackgroundColor,
@@ -197,6 +200,7 @@ class SfCalendarThemeData with Diagnosticable {
       viewHeaderBackgroundColor: viewHeaderBackgroundColor,
       weekNumberBackgroundColor: weekNumberBackgroundColor,
       selectionBorderColor: selectionBorderColor,
+      resizingBorderColor: resizingBorderColor,
       weekNumberTextStyle: weekNumberTextStyle,
       timeIndicatorTextStyle: timeIndicatorTextStyle,
     );
@@ -306,6 +310,11 @@ class SfCalendarThemeData with Diagnosticable {
   ///}
   /// ```
   final Color? selectionBorderColor;
+
+  /// Specifies the border color of the appointment resize/highlight overlay.
+  ///
+  /// When null, the calendar defaults to [selectionBorderColor].
+  final Color? resizingBorderColor;
 
   ///Specifies the agenda view background color.
   ///
@@ -815,6 +824,7 @@ class SfCalendarThemeData with Diagnosticable {
     Color? viewHeaderBackgroundColor,
     Color? weekNumberBackgroundColor,
     Color? selectionBorderColor,
+    Color? resizingBorderColor,
     Color? allDayPanelColor,
   }) {
     return SfCalendarThemeData.raw(
@@ -858,6 +868,7 @@ class SfCalendarThemeData with Diagnosticable {
       weekNumberBackgroundColor:
           weekNumberBackgroundColor ?? this.weekNumberBackgroundColor,
       selectionBorderColor: selectionBorderColor ?? this.selectionBorderColor,
+      resizingBorderColor: resizingBorderColor ?? this.resizingBorderColor,
       allDayPanelColor: allDayPanelColor ?? this.allDayPanelColor,
     );
   }
@@ -887,6 +898,11 @@ class SfCalendarThemeData with Diagnosticable {
       selectionBorderColor: Color.lerp(
         a.selectionBorderColor,
         b.selectionBorderColor,
+        t,
+      ),
+      resizingBorderColor: Color.lerp(
+        a.resizingBorderColor,
+        b.resizingBorderColor,
         t,
       ),
       activeDatesBackgroundColor: Color.lerp(
@@ -962,6 +978,7 @@ class SfCalendarThemeData with Diagnosticable {
         other.viewHeaderBackgroundColor == viewHeaderBackgroundColor &&
         other.weekNumberBackgroundColor == weekNumberBackgroundColor &&
         other.selectionBorderColor == selectionBorderColor &&
+        other.resizingBorderColor == resizingBorderColor &&
         other.allDayPanelColor == allDayPanelColor &&
         other.timeIndicatorTextStyle == timeIndicatorTextStyle;
   }
@@ -993,6 +1010,7 @@ class SfCalendarThemeData with Diagnosticable {
       viewHeaderBackgroundColor,
       weekNumberBackgroundColor,
       selectionBorderColor,
+      resizingBorderColor,
       allDayPanelColor,
       timeIndicatorTextStyle,
     ];
@@ -1085,6 +1103,13 @@ class SfCalendarThemeData with Diagnosticable {
         'selectionBorderColor',
         selectionBorderColor,
         defaultValue: defaultData.selectionBorderColor,
+      ),
+    );
+    properties.add(
+      ColorProperty(
+        'resizingBorderColor',
+        resizingBorderColor,
+        defaultValue: defaultData.resizingBorderColor,
       ),
     );
     properties.add(
