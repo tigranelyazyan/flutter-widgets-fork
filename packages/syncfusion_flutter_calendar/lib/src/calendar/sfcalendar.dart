@@ -9510,15 +9510,15 @@ class _SfCalendarState extends State<SfCalendar>
   }
 
   /// Filter and returns the appointment collection for the given resource from
-  /// the visible appointments collection.
+  /// the appointments collection.
   List<dynamic> _getSelectedResourceAppointments(CalendarResource resource) {
     final List<dynamic> selectedResourceAppointments = <dynamic>[];
-    if (_visibleAppointments.isEmpty) {
+    if (_appointments.isEmpty) {
       return selectedResourceAppointments;
     }
 
-    for (int i = 0; i < _visibleAppointments.length; i++) {
-      final CalendarAppointment app = _visibleAppointments[i];
+    for (int i = 0; i < _appointments.length; i++) {
+      final CalendarAppointment app = _appointments[i];
       if (app.resourceIds != null &&
           app.resourceIds!.isNotEmpty &&
           app.resourceIds!.contains(resource.id)) {
