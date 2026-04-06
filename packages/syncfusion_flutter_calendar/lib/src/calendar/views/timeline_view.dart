@@ -1443,6 +1443,17 @@ class TimelineViewHeaderView extends CustomPainter {
             ? size.width - childWidth
             : 0;
 
+    // Detect continuous mode: dates span more than one calendar month.
+    final bool isContinuousMonth =
+        isTimelineMonth &&
+        visibleDatesLength > 0 &&
+        (visibleDates.first.month != visibleDates.last.month ||
+            visibleDates.first.year != visibleDates.last.year);
+
+    if (isContinuousMonth) {
+      _drawContinuousMonthLabels(canvas, size, childWidth);
+    }
+
     final TextStyle defaultThemeViewHeaderDayTextStyle = themeData
         .textTheme
         .bodySmall!
@@ -1590,7 +1601,13 @@ class TimelineViewHeaderView extends CustomPainter {
       _dateTextPainter.layout(maxWidth: childWidth);
       if (isTimelineMonth) {
         canvas.save();
-        _drawTimelineMonthViewHeader(canvas, childWidth, size, isBlackoutDate);
+        _drawTimelineMonthViewHeader(
+          canvas,
+          childWidth,
+          size,
+          isBlackoutDate,
+          isContinuousMonth,
+        );
       } else {
         _drawTimelineTimeSlotsViewHeader(canvas, size, childWidth, index, i);
       }
@@ -1661,13 +1678,73 @@ class TimelineViewHeaderView extends CustomPainter {
     }
   }
 
+  /// Draws month labels ("MMM yyyy") at the x-position of the first day of
+  /// each month, spanning across the top portion of the header.
+  void _drawContinuousMonthLabels(
+    Canvas canvas,
+    Size size,
+    double childWidth,
+  ) {
+    final double monthLabelHeight = size.height * 0.4;
+    final TextPainter monthPainter = TextPainter(
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.left,
+    );
+    final TextStyle monthStyle = calendarTheme.viewHeaderDateTextStyle!
+        .copyWith(fontSize: 15, fontWeight: FontWeight.w600);
+
+    // Draw a dividing line below the month labels row.
+    _hoverPainter.strokeWidth = 0.15;
+    _hoverPainter.color = cellBorderColor ?? calendarTheme.cellBorderColor!;
+    canvas.drawLine(
+      Offset(0, monthLabelHeight),
+      Offset(size.width, monthLabelHeight),
+      _hoverPainter,
+    );
+
+    int? lastDrawnMonth;
+    int? lastDrawnYear;
+    for (int i = 0; i < visibleDates.length; i++) {
+      final DateTime date = visibleDates[i];
+      if (date.month == lastDrawnMonth && date.year == lastDrawnYear) {
+        continue;
+      }
+      lastDrawnMonth = date.month;
+      lastDrawnYear = date.year;
+
+      final String label = DateFormat('MMM yyyy', locale).format(date);
+      monthPainter.text = TextSpan(text: label, style: monthStyle);
+      monthPainter.textScaler = TextScaler.linear(textScaleFactor);
+      monthPainter.layout();
+
+      final double xPos =
+          isRTL ? size.width - ((i + 1) * childWidth) : i * childWidth;
+      const double bottomPadding = 4;
+      final double yPos =
+          (monthLabelHeight - bottomPadding - monthPainter.height) / 2;
+
+      monthPainter.paint(canvas, Offset(xPos + 4, yPos));
+    }
+
+    monthPainter.dispose();
+  }
+
   void _drawTimelineMonthViewHeader(
     Canvas canvas,
     double childWidth,
     Size size,
     bool isBlackoutDate,
+    bool isContinuousMonth,
   ) {
-    canvas.clipRect(Rect.fromLTWH(_xPosition, 0, childWidth, size.height));
+    // When continuous, reserve the top portion for month labels.
+    final double monthLabelHeight =
+        isContinuousMonth ? size.height * 0.4 : 0.0;
+    final double dateCellHeight = size.height - monthLabelHeight;
+    final double dateCellTop = monthLabelHeight;
+
+    canvas.clipRect(
+      Rect.fromLTWH(_xPosition, 0, childWidth, size.height),
+    );
     const double leftPadding = 2;
     final double startXPosition =
         _xPosition +
@@ -1677,7 +1754,8 @@ class TimelineViewHeaderView extends CustomPainter {
                     _dayTextPainter.width)) /
             2;
     final double startYPosition =
-        (size.height -
+        dateCellTop +
+        (dateCellHeight -
             (_dayTextPainter.height > _dateTextPainter.height
                 ? _dayTextPainter.height
                 : _dateTextPainter.height)) /

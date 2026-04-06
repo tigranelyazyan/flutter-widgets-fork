@@ -26,6 +26,103 @@ import '../views/timeline_view.dart';
 /// All day appointment views default height
 const double _kAllDayLayoutHeight = 60;
 
+/// Number of days loaded in each direction for continuous timeline scroll.
+const int _kContinuousTimelineBuffer = 90;
+
+/// Threshold (0–1) of scroll extent at which more dates are loaded.
+const double _kContinuousTimelineEdgeThreshold = 0.25;
+
+/// Number of days added when extending the date range at an edge.
+const int _kContinuousTimelineExtendDays = 60;
+
+/// Maximum total days before trimming the far side.
+const int _kContinuousTimelineMaxDays = 360;
+
+/// Mutable holder that lets [_CustomCalendarScrollViewState] schedule a
+/// scroll-offset correction that [_ContinuousTimelineScrollPhysics] applies
+/// during the next layout pass (before paint), avoiding a visible jump.
+class _ScrollCorrectionHolder {
+  double correction = 0.0;
+
+  double consumeCorrection() {
+    final double c = correction;
+    correction = 0.0;
+    return c;
+  }
+}
+
+/// Scroll physics for the continuous-timeline inner ListView.
+/// When [_ScrollCorrectionHolder.correction] is non-zero it adjusts the
+/// scroll offset atomically during layout so prepended dates don't cause a
+/// visible content shift.
+///
+/// [allowUserScroll] == false reproduces the NeverScrollableScrollPhysics
+/// behaviour used on mobile (where the drag is managed externally via
+/// ScrollPosition.drag) while still allowing offset corrections.
+class _ContinuousTimelineScrollPhysics extends ScrollPhysics {
+  const _ContinuousTimelineScrollPhysics({
+    required this.correctionHolder,
+    this.allowUserScroll = true,
+    super.parent,
+  });
+
+  final _ScrollCorrectionHolder correctionHolder;
+  final bool allowUserScroll;
+
+  @override
+  double get maxFlingVelocity => 2000.0;
+
+  @override
+  _ContinuousTimelineScrollPhysics applyTo(ScrollPhysics? ancestor) {
+    return _ContinuousTimelineScrollPhysics(
+      correctionHolder: correctionHolder,
+      allowUserScroll: allowUserScroll,
+      parent: buildParent(
+        const ClampingScrollPhysics(parent: RangeMaintainingScrollPhysics()),
+      ),
+    );
+  }
+
+  @override
+  bool shouldAcceptUserOffset(ScrollMetrics position) {
+    if (!allowUserScroll) {
+      return false;
+    }
+    return super.shouldAcceptUserOffset(position);
+  }
+
+  @override
+  Simulation? createBallisticSimulation(
+    ScrollMetrics position,
+    double velocity,
+  ) {
+    final double clampedVelocity = velocity.clamp(
+      -maxFlingVelocity,
+      maxFlingVelocity,
+    );
+    return super.createBallisticSimulation(position, clampedVelocity);
+  }
+
+  @override
+  double adjustPositionForNewDimensions({
+    required ScrollMetrics oldPosition,
+    required ScrollMetrics newPosition,
+    required bool isScrolling,
+    required double velocity,
+  }) {
+    final double correction = correctionHolder.consumeCorrection();
+    if (correction != 0) {
+      return oldPosition.pixels + correction;
+    }
+    return super.adjustPositionForNewDimensions(
+      oldPosition: oldPosition,
+      newPosition: newPosition,
+      isScrolling: isScrolling,
+      velocity: velocity,
+    );
+  }
+}
+
 /// Holds the looping widget for calendar view(time slot, month, timeline and
 /// appointment views) widgets of calendar widget.
 @immutable
@@ -271,6 +368,16 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
   Timer? _timer;
   late double? _viewPortHeight;
 
+  /// True when the current view is a timeline view using continuous scroll.
+  bool get _isContinuousTimeline =>
+      CalendarViewHelper.isTimelineView(widget.view);
+
+  /// Whether the continuous timeline scroll listener has been attached.
+  bool _continuousScrollListenerAttached = false;
+
+  /// Whether a date-range extension is already in progress (debounce guard).
+  bool _isExtendingDates = false;
+
   @override
   void initState() {
     _dragDetails = ValueNotifier<_DragPaintDetails>(
@@ -296,6 +403,12 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
     )..addListener(animationListener);
 
     _timeRegions = CalendarViewHelper.cloneList(widget.specialRegions);
+
+    if (_isContinuousTimeline) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        _attachContinuousScrollListener();
+      });
+    }
 
     super.initState();
   }
@@ -327,6 +440,13 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
     if (oldWidget.view != widget.view) {
       _children.clear();
 
+      // Detach the old continuous scroll listener if needed.
+      if (_continuousScrollListenerAttached) {
+        final _CalendarViewState? vs = _getCurrentViewByVisibleDates();
+        vs?._scrollController?.removeListener(_onContinuousTimelineScroll);
+        _continuousScrollListenerAttached = false;
+      }
+
       /// Switching timeline view from non timeline view or non timeline view
       /// from timeline view creates the scroll layout as new because we handle
       /// the scrolling touch for timeline view in this widget, so current
@@ -339,6 +459,13 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
 
       _updateVisibleDates();
       _position = 0;
+
+      // Re-attach listener for the new view if continuous timeline.
+      if (_isContinuousTimeline) {
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          _attachContinuousScrollListener();
+        });
+      }
     }
 
     if ((widget.calendar.monthViewSettings.navigationDirection !=
@@ -848,6 +975,12 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
 
   @override
   void dispose() {
+    if (_continuousScrollListenerAttached) {
+      final _CalendarViewState? viewState = _getCurrentViewByVisibleDates();
+      viewState?._scrollController?.removeListener(
+        _onContinuousTimelineScroll,
+      );
+    }
     _animationController.dispose();
     _animation.removeListener(animationListener);
     _focusNode.dispose();
@@ -2678,6 +2811,20 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
 
   /// Get the scroll layout current child view state based on its visible dates.
   _CalendarViewState? _getCurrentViewByVisibleDates() {
+    // In continuous-timeline mode all panes share the same visibleDates
+    // reference, so look up by _currentChildIndex instead.
+    if (_isContinuousTimeline) {
+      final GlobalKey<_CalendarViewState> key;
+      if (_currentChildIndex == 0) {
+        key = _previousViewKey;
+      } else if (_currentChildIndex == 2) {
+        key = _nextViewKey;
+      } else {
+        key = _currentViewKey;
+      }
+      return key.currentState;
+    }
+
     _CalendarView? view;
     for (int i = 0; i < _children.length; i++) {
       final _CalendarView currentView = _children[i];
@@ -2732,15 +2879,17 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
     _timelineStartPosition = details.globalPosition.dx;
     _isNeedTimelineScrollEnd = false;
 
-    /// If the timeline view scroll starts at min or max scroll position then
-    /// move the previous view to end of the scroll or move the next view to
-    /// start of the scroll
-    if (_timelineScrollStartPosition >=
-        viewKey._scrollController!.position.maxScrollExtent) {
-      _positionTimelineView();
-    } else if (_timelineScrollStartPosition <=
-        viewKey._scrollController!.position.minScrollExtent) {
-      _positionTimelineView();
+    if (!_isContinuousTimeline) {
+      /// If the timeline view scroll starts at min or max scroll position then
+      /// move the previous view to end of the scroll or move the next view to
+      /// start of the scroll
+      if (_timelineScrollStartPosition >=
+          viewKey._scrollController!.position.maxScrollExtent) {
+        _positionTimelineView();
+      } else if (_timelineScrollStartPosition <=
+          viewKey._scrollController!.position.minScrollExtent) {
+        _positionTimelineView();
+      }
     }
 
     /// Set the drag as timeline scroll controller drag.
@@ -2794,44 +2943,31 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
     /// scroll position.
     final double difference =
         details.globalPosition.dx - _timelineStartPosition;
-    if (_timelineScrollStartPosition >=
-            viewKey._scrollController!.position.maxScrollExtent &&
-        ((difference < 0 && !widget.isRTL) ||
-            (difference > 0 && widget.isRTL))) {
-      /// Set the scroll position as timeline scroll start position and the
-      /// value used on horizontal update method.
-      _scrollStartPosition = _timelineStartPosition;
-      _drag?.cancel();
 
-      /// Move the touch(drag) to custom scroll view.
-      _onHorizontalUpdate(details);
-
-      /// Enable boolean value used to trigger the horizontal end animation on
-      /// drag end.
-      _isNeedTimelineScrollEnd = true;
-
-      /// Remove the timeline view drag or scroll.
-      _disposeDrag();
-      return;
-    } else if (_timelineScrollStartPosition <=
-            viewKey._scrollController!.position.minScrollExtent &&
-        ((difference > 0 && !widget.isRTL) ||
-            (difference < 0 && widget.isRTL))) {
-      /// Set the scroll position as timeline scroll start position and the
-      /// value used on horizontal update method.
-      _scrollStartPosition = _timelineStartPosition;
-      _drag?.cancel();
-
-      /// Move the touch(drag) to custom scroll view.
-      _onHorizontalUpdate(details);
-
-      /// Enable boolean value used to trigger the horizontal end animation on
-      /// drag end.
-      _isNeedTimelineScrollEnd = true;
-
-      /// Remove the timeline view drag or scroll.
-      _disposeDrag();
-      return;
+    // In continuous timeline mode the inner scroll handles the full range;
+    // we never transfer control to the outer pane-swap gesture.
+    if (!_isContinuousTimeline) {
+      if (_timelineScrollStartPosition >=
+              viewKey._scrollController!.position.maxScrollExtent &&
+          ((difference < 0 && !widget.isRTL) ||
+              (difference > 0 && widget.isRTL))) {
+        _scrollStartPosition = _timelineStartPosition;
+        _drag?.cancel();
+        _onHorizontalUpdate(details);
+        _isNeedTimelineScrollEnd = true;
+        _disposeDrag();
+        return;
+      } else if (_timelineScrollStartPosition <=
+              viewKey._scrollController!.position.minScrollExtent &&
+          ((difference > 0 && !widget.isRTL) ||
+              (difference < 0 && widget.isRTL))) {
+        _scrollStartPosition = _timelineStartPosition;
+        _drag?.cancel();
+        _onHorizontalUpdate(details);
+        _isNeedTimelineScrollEnd = true;
+        _disposeDrag();
+        return;
+      }
     }
 
     _drag?.update(details);
@@ -2939,6 +3075,23 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
       _updateCalendarStateDetails.currentDate!.month,
       _updateCalendarStateDetails.currentDate!.day,
     );
+
+    if (_isContinuousTimeline) {
+      _visibleDates = _generateContinuousTimelineDates(
+        currentDate,
+        nonWorkingDays,
+      );
+      _currentViewVisibleDates = _visibleDates;
+      // Off-screen panes re-use the same dates; they are never swiped into
+      // view so the cost is just the widget build (no extra painting).
+      _previousViewVisibleDates = _visibleDates;
+      _nextViewVisibleDates = _visibleDates;
+      _updateCalendarStateDetails.currentViewVisibleDates =
+          _currentViewVisibleDates;
+      widget.updateCalendarState(_updateCalendarStateDetails);
+      return;
+    }
+
     final DateTime prevDate = DateTimeHelper.getPreviousViewStartDate(
       widget.view,
       widget.calendar.monthViewSettings.numberOfWeeksInView,
@@ -3001,6 +3154,287 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
       _previousViewVisibleDates = _nextViewVisibleDates;
       _nextViewVisibleDates = _currentViewVisibleDates;
     }
+  }
+
+  /// Generates a flat list of consecutive dates for continuous timeline scroll.
+  /// The range is centred on [centerDate] with [_kContinuousTimelineBuffer]
+  /// days in each direction. Non-working days are excluded for work-week views.
+  List<DateTime> _generateContinuousTimelineDates(
+    DateTime centerDate,
+    List<int>? nonWorkingDays,
+  ) {
+    const int buffer = _kContinuousTimelineBuffer;
+    final List<DateTime> dates = <DateTime>[];
+    final DateTime startDate = DateTime(
+      centerDate.year,
+      centerDate.month,
+      centerDate.day - buffer,
+    );
+    const int totalCalendarDays = buffer * 2 + 1;
+    final bool isWorkWeek =
+        widget.view == CalendarView.timelineWorkWeek;
+    for (int i = 0; i < totalCalendarDays; i++) {
+      final DateTime date = DateTime(
+        startDate.year,
+        startDate.month,
+        startDate.day + i,
+      );
+      if (isWorkWeek &&
+          nonWorkingDays != null &&
+          nonWorkingDays.contains(date.weekday)) {
+        continue;
+      }
+      dates.add(date);
+    }
+    return dates;
+  }
+
+  /// Attaches a listener to the current view's inner scroll controller so
+  /// that we can detect when the user approaches the edge and extend the
+  /// visible date range dynamically.
+  void _attachContinuousScrollListener() {
+    if (_continuousScrollListenerAttached || !_isContinuousTimeline) {
+      return;
+    }
+    final _CalendarViewState? viewState = _getCurrentViewByVisibleDates();
+    if (viewState != null &&
+        viewState._scrollController != null &&
+        viewState._scrollController!.hasClients) {
+      viewState._scrollController!.addListener(_onContinuousTimelineScroll);
+      _continuousScrollListenerAttached = true;
+    }
+  }
+
+  /// Called every time the current timeline view scrolls. When the offset
+  /// is within [_kContinuousTimelineEdgeThreshold] of either edge we extend
+  /// the date range and, when prepending, schedule an offset correction via
+  /// the current view's [_ScrollCorrectionHolder].
+  void _onContinuousTimelineScroll() {
+    if (!_isContinuousTimeline) {
+      return;
+    }
+    final _CalendarViewState? viewState = _getCurrentViewByVisibleDates();
+    if (viewState == null ||
+        viewState._scrollController == null ||
+        !viewState._scrollController!.hasClients) {
+      return;
+    }
+    final ScrollPosition pos = viewState._scrollController!.position;
+    final double maxExtent = pos.maxScrollExtent;
+    final double offset = pos.pixels;
+
+    // Update the header to reflect the leftmost visible date.
+    _updateContinuousTimelineHeader(viewState, offset);
+
+    if (_isExtendingDates || maxExtent <= 0) {
+      return;
+    }
+    final double threshold = maxExtent * _kContinuousTimelineEdgeThreshold;
+
+    if (offset >= maxExtent - threshold) {
+      _extendContinuousTimelineDates(extendRight: true);
+    } else if (offset <= threshold) {
+      _extendContinuousTimelineDates(extendRight: false);
+    }
+  }
+
+  /// Computes the leftmost visible date from the scroll [offset] and pushes
+  /// it as the [CalendarController.displayDate] so the header text updates.
+  void _updateContinuousTimelineHeader(
+    _CalendarViewState viewState,
+    double offset,
+  ) {
+    final double dayWidth =
+        viewState._timeIntervalHeight *
+        (viewState._horizontalLinesCount ?? 1);
+    if (dayWidth <= 0) {
+      return;
+    }
+    final int dateIndex =
+        (offset / dayWidth).floor().clamp(0, _currentViewVisibleDates.length - 1);
+    final DateTime leftDate = _currentViewVisibleDates[dateIndex];
+    final DateTime normalized = DateTime(
+      leftDate.year,
+      leftDate.month,
+      leftDate.day,
+    );
+    if (_updateCalendarStateDetails.currentDate != normalized) {
+      _updateCalendarStateDetails.currentDate = normalized;
+      widget.updateCalendarState(_updateCalendarStateDetails);
+    }
+  }
+
+  /// Extends the visible date range by [_kContinuousTimelineExtendDays] in
+  /// the given direction. When prepending (extendRight == false) the scroll
+  /// offset is corrected atomically via [_ContinuousTimelineScrollPhysics]
+  /// so there is no visible content jump.
+  void _extendContinuousTimelineDates({required bool extendRight}) {
+    if (_isExtendingDates) {
+      return;
+    }
+    _isExtendingDates = true;
+
+    final List<int>? nonWorkingDays =
+        (widget.view == CalendarView.timelineWorkWeek)
+            ? widget.calendar.timeSlotViewSettings.nonWorkingDays
+            : null;
+    final bool isWorkWeek =
+        widget.view == CalendarView.timelineWorkWeek;
+
+    final List<DateTime> current = _currentViewVisibleDates;
+    List<DateTime> newDates;
+
+    if (extendRight) {
+      final DateTime lastDate = current.last;
+      final List<DateTime> extra = <DateTime>[];
+      int added = 0;
+      int dayOffset = 1;
+      while (added < _kContinuousTimelineExtendDays) {
+        final DateTime d = DateTime(
+          lastDate.year,
+          lastDate.month,
+          lastDate.day + dayOffset,
+        );
+        dayOffset++;
+        if (isWorkWeek &&
+            nonWorkingDays != null &&
+            nonWorkingDays.contains(d.weekday)) {
+          continue;
+        }
+        extra.add(d);
+        added++;
+      }
+      newDates = <DateTime>[...current, ...extra];
+
+      // Trim the left side if total exceeds max.
+      if (newDates.length > _kContinuousTimelineMaxDays) {
+        final int trimCount = newDates.length - _kContinuousTimelineMaxDays;
+        final _CalendarViewState? viewState =
+            _getCurrentViewByVisibleDates();
+        if (viewState != null) {
+          final double dayWidth =
+              viewState._timeIntervalHeight *
+              (viewState._horizontalLinesCount ?? 1);
+          viewState._scrollCorrectionHolder.correction =
+              -(trimCount * dayWidth);
+        }
+        newDates = newDates.sublist(trimCount);
+      }
+    } else {
+      final DateTime firstDate = current.first;
+      final List<DateTime> extra = <DateTime>[];
+      int added = 0;
+      int dayOffset = 1;
+      while (added < _kContinuousTimelineExtendDays) {
+        final DateTime d = DateTime(
+          firstDate.year,
+          firstDate.month,
+          firstDate.day - dayOffset,
+        );
+        dayOffset++;
+        if (isWorkWeek &&
+            nonWorkingDays != null &&
+            nonWorkingDays.contains(d.weekday)) {
+          continue;
+        }
+        extra.add(d);
+        added++;
+      }
+      // Reverse so dates are in chronological order, then prepend.
+      extra.sort((DateTime a, DateTime b) => a.compareTo(b));
+
+      final _CalendarViewState? viewState = _getCurrentViewByVisibleDates();
+      if (viewState != null) {
+        final double dayWidth =
+            viewState._timeIntervalHeight *
+            (viewState._horizontalLinesCount ?? 1);
+        viewState._scrollCorrectionHolder.correction =
+            extra.length * dayWidth;
+      }
+
+      newDates = <DateTime>[...extra, ...current];
+
+      // Trim the right side if total exceeds max.
+      if (newDates.length > _kContinuousTimelineMaxDays) {
+        newDates = newDates.sublist(
+          0,
+          _kContinuousTimelineMaxDays,
+        );
+      }
+    }
+
+    _visibleDates = newDates;
+    _currentViewVisibleDates = newDates;
+    _previousViewVisibleDates = newDates;
+    _nextViewVisibleDates = newDates;
+
+    _updateCalendarStateDetails.currentViewVisibleDates =
+        _currentViewVisibleDates;
+    widget.updateCalendarState(_updateCalendarStateDetails);
+
+    setState(() {});
+
+    // Reset the guard after the frame completes.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _isExtendingDates = false;
+    });
+  }
+
+  /// Animated scroll for forward/backward navigation buttons in continuous
+  /// timeline mode. Scrolls by one viewport width in the given direction.
+  void _scrollContinuousTimeline({required bool forward}) {
+    final _CalendarViewState? viewState = _getCurrentViewByVisibleDates();
+    if (viewState == null ||
+        viewState._scrollController == null ||
+        !viewState._scrollController!.hasClients) {
+      return;
+    }
+    final ScrollController sc = viewState._scrollController!;
+    final List<DateTime> dates = _currentViewVisibleDates;
+    if (dates.isEmpty) {
+      return;
+    }
+
+    final double totalWidth =
+        sc.position.maxScrollExtent + sc.position.viewportDimension;
+    final double dayWidth = totalWidth / dates.length;
+
+    // Find the date currently at the left edge of the viewport.
+    final int currentIndex =
+        (sc.offset / dayWidth).floor().clamp(0, dates.length - 1);
+    final DateTime currentDate = dates[currentIndex];
+
+    // Compute the 1st of the target month.
+    DateTime targetDate;
+    if (forward) {
+      targetDate = DateTime(currentDate.year, currentDate.month + 1);
+    } else {
+      if (currentDate.day == 1) {
+        targetDate = DateTime(currentDate.year, currentDate.month - 1);
+      } else {
+        targetDate = DateTime(currentDate.year, currentDate.month);
+      }
+    }
+
+    // Find the index of the target date in the visible dates list.
+    int targetIndex = -1;
+    for (int i = 0; i < dates.length; i++) {
+      if (!dates[i].isBefore(targetDate)) {
+        targetIndex = i;
+        break;
+      }
+    }
+    if (targetIndex == -1) {
+      targetIndex = forward ? dates.length - 1 : 0;
+    }
+
+    final double target =
+        (targetIndex * dayWidth).clamp(0.0, sc.position.maxScrollExtent);
+    sc.animateTo(
+      target,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
 
   void _updateNextViewVisibleDates() {
@@ -3980,6 +4414,10 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
   }
 
   void _moveToNextViewWithAnimation() {
+    if (_isContinuousTimeline) {
+      _scrollContinuousTimeline(forward: true);
+      return;
+    }
     if (!widget.isMobilePlatform) {
       _moveToNextWebViewWithAnimation();
       return;
@@ -4033,6 +4471,10 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
   }
 
   void _moveToPreviousViewWithAnimation({bool isScrollToEnd = false}) {
+    if (_isContinuousTimeline) {
+      _scrollContinuousTimeline(forward: false);
+      return;
+    }
     if (!widget.isMobilePlatform) {
       _moveToPreviousWebViewWithAnimation(isScrollToEnd: isScrollToEnd);
       return;
@@ -6373,6 +6815,11 @@ class _CalendarViewState extends State<_CalendarView>
   ScrollController? _timelineViewHeaderScrollController,
       _timelineViewVerticalScrollController,
       _timelineRulerController;
+
+  /// Shared with the parent [_CustomCalendarScrollViewState] so it can
+  /// schedule scroll-offset corrections when prepending dates.
+  final _ScrollCorrectionHolder _scrollCorrectionHolder =
+      _ScrollCorrectionHolder();
 
   late AppointmentLayout _appointmentLayout;
   AnimationController? _timelineViewAnimationController;
@@ -10096,10 +10543,10 @@ class _CalendarViewState extends State<_CalendarView>
               padding: EdgeInsets.zero,
               controller: _scrollController,
               scrollDirection: Axis.horizontal,
-              physics:
-                  widget.isMobilePlatform
-                      ? const _CustomNeverScrollableScrollPhysics()
-                      : const ClampingScrollPhysics(),
+              physics: _ContinuousTimelineScrollPhysics(
+                correctionHolder: _scrollCorrectionHolder,
+                allowUserScroll: !widget.isMobilePlatform,
+              ),
               children: <Widget>[
                 SizedBox(
                   width: width,

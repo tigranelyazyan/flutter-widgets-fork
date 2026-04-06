@@ -11816,8 +11816,28 @@ class _CalendarHeaderViewState extends State<_CalendarHeaderView> {
           // ignore: lines_longer_than_80_chars
           return '${DateFormat(monthFormat, widget.locale).format(widget.valueChangeNotifier.value!)} ${widget.valueChangeNotifier.value!.year}';
         }
-      case CalendarView.month:
       case CalendarView.timelineMonth:
+        {
+          final DateTime startDate = widget.visibleDates[0];
+          final DateTime endDate =
+              widget.visibleDates[widget.visibleDates.length - 1];
+          final bool isContinuous =
+              startDate.month != endDate.month ||
+              startDate.year != endDate.year;
+          if (isContinuous) {
+            return '';
+          }
+          if (headerDateFormat != null) {
+            return CalendarViewHelper.getLocalizedString(
+              widget.currentDate!,
+              headerFormatString,
+              widget.locale,
+            );
+          }
+          // ignore: lines_longer_than_80_chars
+          return '${DateFormat(monthFormat, widget.locale).format(widget.currentDate!)} ${widget.currentDate!.year}';
+        }
+      case CalendarView.month:
         {
           final DateTime startDate = widget.visibleDates[0];
           final DateTime endDate =
