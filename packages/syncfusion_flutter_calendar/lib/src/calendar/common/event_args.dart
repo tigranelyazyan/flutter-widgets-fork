@@ -358,6 +358,17 @@ typedef LoadMoreWidgetBuilder =
       LoadMoreCallback loadMoreAppointments,
     );
 
+/// Signature for a function that wraps the default off-screen appointment
+/// indicator in timeline views.
+///
+/// See also:
+/// * [SfCalendar.offScreenIndicatorBuilder], which matches this signature.
+typedef OffScreenIndicatorBuilder =
+    Widget Function(
+      BuildContext context,
+      OffScreenIndicatorDetails details,
+    );
+
 /// Signature for the function that have no arguments and return no data, but
 /// that return a [Future] to indicate when their work is complete.
 ///
@@ -451,6 +462,27 @@ class CalendarAppointmentDetails {
   /// It is applicable on the day, week, workweek views all day panel and
   /// month cell appointment.
   final bool isMoreAppointmentRegion;
+}
+
+/// Details provided to [SfCalendar.offScreenIndicatorBuilder] so the consumer
+/// can wrap or replace the default off-screen indicator arrow.
+class OffScreenIndicatorDetails {
+  /// Creates the details for an off-screen indicator.
+  const OffScreenIndicatorDetails({
+    required this.appointment,
+    required this.isLeading,
+    required this.child,
+  });
+
+  /// The original appointment object supplied to the calendar data source.
+  final Object appointment;
+
+  /// `true` when the appointment is off-screen to the leading side (left in
+  /// LTR, right in RTL), `false` when it is off-screen to the trailing side.
+  final bool isLeading;
+
+  /// The default indicator widget rendered by the calendar.
+  final Widget child;
 }
 
 /// Contains the details that needed on special region view builder.

@@ -977,9 +977,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
   void dispose() {
     if (_continuousScrollListenerAttached) {
       final _CalendarViewState? viewState = _getCurrentViewByVisibleDates();
-      viewState?._scrollController?.removeListener(
-        _onContinuousTimelineScroll,
-      );
+      viewState?._scrollController?.removeListener(_onContinuousTimelineScroll);
     }
     _animationController.dispose();
     _animation.removeListener(animationListener);
@@ -3171,8 +3169,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
       centerDate.day - buffer,
     );
     const int totalCalendarDays = buffer * 2 + 1;
-    final bool isWorkWeek =
-        widget.view == CalendarView.timelineWorkWeek;
+    final bool isWorkWeek = widget.view == CalendarView.timelineWorkWeek;
     for (int i = 0; i < totalCalendarDays; i++) {
       final DateTime date = DateTime(
         startDate.year,
@@ -3245,13 +3242,14 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
     double offset,
   ) {
     final double dayWidth =
-        viewState._timeIntervalHeight *
-        (viewState._horizontalLinesCount ?? 1);
+        viewState._timeIntervalHeight * (viewState._horizontalLinesCount ?? 1);
     if (dayWidth <= 0) {
       return;
     }
-    final int dateIndex =
-        (offset / dayWidth).floor().clamp(0, _currentViewVisibleDates.length - 1);
+    final int dateIndex = (offset / dayWidth).floor().clamp(
+      0,
+      _currentViewVisibleDates.length - 1,
+    );
     final DateTime leftDate = _currentViewVisibleDates[dateIndex];
     final DateTime normalized = DateTime(
       leftDate.year,
@@ -3278,8 +3276,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         (widget.view == CalendarView.timelineWorkWeek)
             ? widget.calendar.timeSlotViewSettings.nonWorkingDays
             : null;
-    final bool isWorkWeek =
-        widget.view == CalendarView.timelineWorkWeek;
+    final bool isWorkWeek = widget.view == CalendarView.timelineWorkWeek;
 
     final List<DateTime> current = _currentViewVisibleDates;
     List<DateTime> newDates;
@@ -3309,8 +3306,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
       // Trim the left side if total exceeds max.
       if (newDates.length > _kContinuousTimelineMaxDays) {
         final int trimCount = newDates.length - _kContinuousTimelineMaxDays;
-        final _CalendarViewState? viewState =
-            _getCurrentViewByVisibleDates();
+        final _CalendarViewState? viewState = _getCurrentViewByVisibleDates();
         if (viewState != null) {
           final double dayWidth =
               viewState._timeIntervalHeight *
@@ -3348,18 +3344,14 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         final double dayWidth =
             viewState._timeIntervalHeight *
             (viewState._horizontalLinesCount ?? 1);
-        viewState._scrollCorrectionHolder.correction =
-            extra.length * dayWidth;
+        viewState._scrollCorrectionHolder.correction = extra.length * dayWidth;
       }
 
       newDates = <DateTime>[...extra, ...current];
 
       // Trim the right side if total exceeds max.
       if (newDates.length > _kContinuousTimelineMaxDays) {
-        newDates = newDates.sublist(
-          0,
-          _kContinuousTimelineMaxDays,
-        );
+        newDates = newDates.sublist(0, _kContinuousTimelineMaxDays);
       }
     }
 
@@ -3400,8 +3392,10 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
     final double dayWidth = totalWidth / dates.length;
 
     // Find the date currently at the left edge of the viewport.
-    final int currentIndex =
-        (sc.offset / dayWidth).floor().clamp(0, dates.length - 1);
+    final int currentIndex = (sc.offset / dayWidth).floor().clamp(
+      0,
+      dates.length - 1,
+    );
     final DateTime currentDate = dates[currentIndex];
 
     // Compute the 1st of the target month.
@@ -3428,8 +3422,10 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
       targetIndex = forward ? dates.length - 1 : 0;
     }
 
-    final double target =
-        (targetIndex * dayWidth).clamp(0.0, sc.position.maxScrollExtent);
+    final double target = (targetIndex * dayWidth).clamp(
+      0.0,
+      sc.position.maxScrollExtent,
+    );
     sc.animateTo(
       target,
       duration: const Duration(milliseconds: 300),
@@ -7966,6 +7962,16 @@ class _CalendarViewState extends State<_CalendarView>
     return _appointmentLayout;
   }
 
+  /// Returns the current appointment view collection from the layout state,
+  /// or an empty list if the state is not yet available.
+  List<AppointmentView> _getAppointmentViewsForIndicators() {
+    try {
+      return _appointmentLayout.getAppointmentViewCollection();
+    } catch (_) {
+      return <AppointmentView>[];
+    }
+  }
+
   void _onVerticalStart(DragStartDetails details) {
     final double xPosition = details.localPosition.dx;
     double yPosition = details.localPosition.dy;
@@ -10630,6 +10636,20 @@ class _CalendarViewState extends State<_CalendarView>
                 ),
               ],
             ),
+          ),
+        ),
+        Positioned(
+          top: viewHeaderHeight + timeLabelSize,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: _TimelineOffScreenIndicators(
+            scrollController: _scrollController!,
+            verticalScrollController: _timelineViewVerticalScrollController,
+            getAppointmentViews: _getAppointmentViewsForIndicators,
+            visibleAppointmentsNotifier: _appointmentLayout.visibleAppointments,
+            isRTL: _isRTL,
+            indicatorBuilder: widget.calendar.offScreenIndicatorBuilder,
           ),
         ),
       ],
@@ -13790,6 +13810,246 @@ class _CalendarViewState extends State<_CalendarView>
       children: <Widget>[
         CustomPaint(painter: _timelineViewHeader, size: Size(width, height)),
       ],
+    );
+  }
+}
+
+/// Overlay that renders small arrow indicators at the left/right viewport
+/// edges whenever an appointment extends beyond the visible area.
+/// Tapping an indicator auto-scrolls to bring the appointment into view.
+class _TimelineOffScreenIndicators extends StatefulWidget {
+  const _TimelineOffScreenIndicators({
+    required this.scrollController,
+    this.verticalScrollController,
+    required this.getAppointmentViews,
+    required this.visibleAppointmentsNotifier,
+    required this.isRTL,
+    this.indicatorBuilder,
+  });
+
+  final ScrollController scrollController;
+  final ScrollController? verticalScrollController;
+  final List<AppointmentView> Function() getAppointmentViews;
+  final ValueNotifier<List<CalendarAppointment>?> visibleAppointmentsNotifier;
+  final bool isRTL;
+  final OffScreenIndicatorBuilder? indicatorBuilder;
+
+  @override
+  State<_TimelineOffScreenIndicators> createState() =>
+      _TimelineOffScreenIndicatorsState();
+}
+
+class _TimelineOffScreenIndicatorsState
+    extends State<_TimelineOffScreenIndicators> {
+  @override
+  void initState() {
+    super.initState();
+    widget.scrollController.addListener(_onChanged);
+    widget.verticalScrollController?.addListener(_onChanged);
+    widget.visibleAppointmentsNotifier.addListener(_onChanged);
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _TimelineOffScreenIndicators oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.scrollController != oldWidget.scrollController) {
+      oldWidget.scrollController.removeListener(_onChanged);
+      widget.scrollController.addListener(_onChanged);
+    }
+    if (widget.verticalScrollController != oldWidget.verticalScrollController) {
+      oldWidget.verticalScrollController?.removeListener(_onChanged);
+      widget.verticalScrollController?.addListener(_onChanged);
+    }
+    if (widget.visibleAppointmentsNotifier !=
+        oldWidget.visibleAppointmentsNotifier) {
+      oldWidget.visibleAppointmentsNotifier.removeListener(_onChanged);
+      widget.visibleAppointmentsNotifier.addListener(_onChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.scrollController.removeListener(_onChanged);
+    widget.verticalScrollController?.removeListener(_onChanged);
+    widget.visibleAppointmentsNotifier.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  void _onChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.scrollController.hasClients ||
+        !widget.scrollController.position.hasContentDimensions ||
+        !widget.scrollController.position.hasViewportDimension ||
+        widget.visibleAppointmentsNotifier.value == null) {
+      return const SizedBox.shrink();
+    }
+
+    final double scrollOffset = widget.scrollController.offset;
+    final double viewportWidth =
+        widget.scrollController.position.viewportDimension;
+    final bool hasVerticalClients =
+        (widget.verticalScrollController?.hasClients ?? false) &&
+        widget.verticalScrollController!.position.hasViewportDimension;
+    final double vOffset =
+        hasVerticalClients ? widget.verticalScrollController!.offset : 0.0;
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double parentHeight = constraints.maxHeight;
+        final List<AppointmentView> appointments = widget.getAppointmentViews();
+        final List<Widget> children = <Widget>[];
+
+        for (final AppointmentView apptView in appointments) {
+          if (apptView.appointmentRect == null ||
+              apptView.appointment == null ||
+              apptView.canReuse) {
+            continue;
+          }
+
+          final RRect rect = apptView.appointmentRect!;
+          final double top = rect.top - vOffset;
+          final double h = rect.height;
+
+          if (top + h < 0 || top > parentHeight) {
+            continue;
+          }
+
+          final bool leftOff = rect.left < scrollOffset;
+          final bool rightOff = rect.right > scrollOffset + viewportWidth;
+
+          if (leftOff && !rightOff) {
+            final Widget defaultIndicator = _OffScreenIndicatorArrow(
+              isLeft: true,
+              height: h,
+              onTap:
+                  () => _animateTo(
+                    (rect.left - 20).clamp(
+                      0.0,
+                      widget.scrollController.position.maxScrollExtent,
+                    ),
+                  ),
+            );
+            children.add(
+              Positioned(
+                left: widget.isRTL ? null : 0,
+                right: widget.isRTL ? 0 : null,
+                top: top + 2,
+                child:
+                    widget.indicatorBuilder != null
+                        ? widget.indicatorBuilder!(
+                          context,
+                          OffScreenIndicatorDetails(
+                            appointment:
+                                apptView.appointment!.data ??
+                                apptView.appointment!,
+                            isLeading: true,
+                            child: defaultIndicator,
+                          ),
+                        )
+                        : defaultIndicator,
+              ),
+            );
+          } else if (rightOff && !leftOff) {
+            final Widget defaultIndicator = _OffScreenIndicatorArrow(
+              isLeft: false,
+              height: h,
+              onTap:
+                  () => _animateTo(
+                    (rect.right - viewportWidth + 20).clamp(
+                      0.0,
+                      widget.scrollController.position.maxScrollExtent,
+                    ),
+                  ),
+            );
+            children.add(
+              Positioned(
+                right: widget.isRTL ? null : 0,
+                left: widget.isRTL ? 0 : null,
+                top: top + 2,
+                child:
+                    widget.indicatorBuilder != null
+                        ? widget.indicatorBuilder!(
+                          context,
+                          OffScreenIndicatorDetails(
+                            appointment:
+                                apptView.appointment!.data ??
+                                apptView.appointment!,
+                            isLeading: false,
+                            child: defaultIndicator,
+                          ),
+                        )
+                        : defaultIndicator,
+              ),
+            );
+          }
+        }
+
+        if (children.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Stack(clipBehavior: Clip.none, children: children);
+      },
+    );
+  }
+
+  void _animateTo(double offset) {
+    widget.scrollController.animateTo(
+      offset,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+}
+
+class _OffScreenIndicatorArrow extends StatelessWidget {
+  const _OffScreenIndicatorArrow({
+    required this.isLeft,
+    required this.height,
+    required this.onTap,
+  });
+
+  final bool isLeft;
+  final double height;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final double indicatorHeight = (height - 4).clamp(16.0, 32.0);
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 24,
+          height: indicatorHeight,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: const Color(0xFFD8D8D8)),
+            borderRadius:
+                isLeft
+                    ? const BorderRadius.horizontal(right: Radius.circular(4))
+                    : const BorderRadius.horizontal(left: Radius.circular(4)),
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            isLeft ? Icons.chevron_left : Icons.chevron_right,
+            color: const Color(0xFF333333),
+            size: 16,
+          ),
+        ),
+      ),
     );
   }
 }

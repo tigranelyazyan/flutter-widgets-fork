@@ -185,6 +185,7 @@ class SfCalendar extends StatefulWidget {
     this.scheduleViewMonthHeaderBuilder,
     this.monthCellBuilder,
     this.appointmentBuilder,
+    this.offScreenIndicatorBuilder,
     this.timeRegionBuilder,
     this.headerDateFormat,
     this.headerStyle = const CalendarHeaderStyle(),
@@ -659,6 +660,18 @@ class SfCalendar extends StatefulWidget {
   ///  }
   ///  ```
   final CalendarAppointmentBuilder? appointmentBuilder;
+
+  /// A builder that wraps or replaces the default off-screen appointment
+  /// indicator in timeline views.
+  ///
+  /// When an appointment extends beyond the visible viewport, a small arrow
+  /// indicator is rendered at the edge. Use this builder to wrap the default
+  /// indicator with a custom widget (e.g. a hover card or tooltip).
+  ///
+  /// The [OffScreenIndicatorDetails] contains the original [appointment]
+  /// object, whether the indicator is on the [isLeading] side, and the default
+  /// [child] widget.
+  final OffScreenIndicatorBuilder? offScreenIndicatorBuilder;
 
   /// A builder that builds a widget that replaces the time region view in day,
   /// week, workweek, and timeline day, week, workweek views.
