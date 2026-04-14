@@ -27,16 +27,7 @@ import '../views/timeline_view.dart';
 const double _kAllDayLayoutHeight = 60;
 
 /// Number of days loaded in each direction for continuous timeline scroll.
-const int _kContinuousTimelineBuffer = 90;
-
-/// Threshold (0–1) of scroll extent at which more dates are loaded.
-const double _kContinuousTimelineEdgeThreshold = 0.25;
-
-/// Number of days added when extending the date range at an edge.
-const int _kContinuousTimelineExtendDays = 60;
-
-/// Maximum total days before trimming the far side.
-const int _kContinuousTimelineMaxDays = 360;
+const int _kContinuousTimelineBuffer = 730;
 
 /// Mutable holder that lets [_CustomCalendarScrollViewState] schedule a
 /// scroll-offset correction that [_ContinuousTimelineScrollPhysics] applies
@@ -376,7 +367,6 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
   bool _continuousScrollListenerAttached = false;
 
   /// Whether a date-range extension is already in progress (debounce guard).
-  bool _isExtendingDates = false;
 
   @override
   void initState() {
@@ -3216,23 +3206,10 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         !viewState._scrollController!.hasClients) {
       return;
     }
-    final ScrollPosition pos = viewState._scrollController!.position;
-    final double maxExtent = pos.maxScrollExtent;
-    final double offset = pos.pixels;
+    final double offset = viewState._scrollController!.position.pixels;
 
     // Update the header to reflect the leftmost visible date.
     _updateContinuousTimelineHeader(viewState, offset);
-
-    if (_isExtendingDates || maxExtent <= 0) {
-      return;
-    }
-    final double threshold = maxExtent * _kContinuousTimelineEdgeThreshold;
-
-    if (offset >= maxExtent - threshold) {
-      _extendContinuousTimelineDates(extendRight: true);
-    } else if (offset <= threshold) {
-      _extendContinuousTimelineDates(extendRight: false);
-    }
   }
 
   /// Computes the leftmost visible date from the scroll [offset] and pushes
@@ -3260,116 +3237,6 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
       _updateCalendarStateDetails.currentDate = normalized;
       widget.updateCalendarState(_updateCalendarStateDetails);
     }
-  }
-
-  /// Extends the visible date range by [_kContinuousTimelineExtendDays] in
-  /// the given direction. When prepending (extendRight == false) the scroll
-  /// offset is corrected atomically via [_ContinuousTimelineScrollPhysics]
-  /// so there is no visible content jump.
-  void _extendContinuousTimelineDates({required bool extendRight}) {
-    if (_isExtendingDates) {
-      return;
-    }
-    _isExtendingDates = true;
-
-    final List<int>? nonWorkingDays =
-        (widget.view == CalendarView.timelineWorkWeek)
-            ? widget.calendar.timeSlotViewSettings.nonWorkingDays
-            : null;
-    final bool isWorkWeek = widget.view == CalendarView.timelineWorkWeek;
-
-    final List<DateTime> current = _currentViewVisibleDates;
-    List<DateTime> newDates;
-
-    if (extendRight) {
-      final DateTime lastDate = current.last;
-      final List<DateTime> extra = <DateTime>[];
-      int added = 0;
-      int dayOffset = 1;
-      while (added < _kContinuousTimelineExtendDays) {
-        final DateTime d = DateTime(
-          lastDate.year,
-          lastDate.month,
-          lastDate.day + dayOffset,
-        );
-        dayOffset++;
-        if (isWorkWeek &&
-            nonWorkingDays != null &&
-            nonWorkingDays.contains(d.weekday)) {
-          continue;
-        }
-        extra.add(d);
-        added++;
-      }
-      newDates = <DateTime>[...current, ...extra];
-
-      // Trim the left side if total exceeds max.
-      if (newDates.length > _kContinuousTimelineMaxDays) {
-        final int trimCount = newDates.length - _kContinuousTimelineMaxDays;
-        final _CalendarViewState? viewState = _getCurrentViewByVisibleDates();
-        if (viewState != null) {
-          final double dayWidth =
-              viewState._timeIntervalHeight *
-              (viewState._horizontalLinesCount ?? 1);
-          viewState._scrollCorrectionHolder.correction =
-              -(trimCount * dayWidth);
-        }
-        newDates = newDates.sublist(trimCount);
-      }
-    } else {
-      final DateTime firstDate = current.first;
-      final List<DateTime> extra = <DateTime>[];
-      int added = 0;
-      int dayOffset = 1;
-      while (added < _kContinuousTimelineExtendDays) {
-        final DateTime d = DateTime(
-          firstDate.year,
-          firstDate.month,
-          firstDate.day - dayOffset,
-        );
-        dayOffset++;
-        if (isWorkWeek &&
-            nonWorkingDays != null &&
-            nonWorkingDays.contains(d.weekday)) {
-          continue;
-        }
-        extra.add(d);
-        added++;
-      }
-      // Reverse so dates are in chronological order, then prepend.
-      extra.sort((DateTime a, DateTime b) => a.compareTo(b));
-
-      final _CalendarViewState? viewState = _getCurrentViewByVisibleDates();
-      if (viewState != null) {
-        final double dayWidth =
-            viewState._timeIntervalHeight *
-            (viewState._horizontalLinesCount ?? 1);
-        viewState._scrollCorrectionHolder.correction = extra.length * dayWidth;
-      }
-
-      newDates = <DateTime>[...extra, ...current];
-
-      // Trim the right side if total exceeds max.
-      if (newDates.length > _kContinuousTimelineMaxDays) {
-        newDates = newDates.sublist(0, _kContinuousTimelineMaxDays);
-      }
-    }
-
-    _visibleDates = newDates;
-    _currentViewVisibleDates = newDates;
-    _previousViewVisibleDates = newDates;
-    _nextViewVisibleDates = newDates;
-
-    _updateCalendarStateDetails.currentViewVisibleDates =
-        _currentViewVisibleDates;
-    widget.updateCalendarState(_updateCalendarStateDetails);
-
-    setState(() {});
-
-    // Reset the guard after the frame completes.
-    SchedulerBinding.instance.addPostFrameCallback((_) {
-      _isExtendingDates = false;
-    });
   }
 
   /// Animated scroll for forward/backward navigation buttons in continuous
@@ -13932,13 +13799,7 @@ class _TimelineOffScreenIndicatorsState
             final Widget defaultIndicator = _OffScreenIndicatorArrow(
               isLeft: true,
               height: h,
-              onTap:
-                  () => _animateTo(
-                    (rect.left - 20).clamp(
-                      0.0,
-                      widget.scrollController.position.maxScrollExtent,
-                    ),
-                  ),
+              onTap: () => _scrollToAppointment(apptView, showStart: true),
             );
             children.add(
               Positioned(
@@ -13964,13 +13825,7 @@ class _TimelineOffScreenIndicatorsState
             final Widget defaultIndicator = _OffScreenIndicatorArrow(
               isLeft: false,
               height: h,
-              onTap:
-                  () => _animateTo(
-                    (rect.right - viewportWidth + 20).clamp(
-                      0.0,
-                      widget.scrollController.position.maxScrollExtent,
-                    ),
-                  ),
+              onTap: () => _scrollToAppointment(apptView, showStart: false),
             );
             children.add(
               Positioned(
@@ -14004,9 +13859,25 @@ class _TimelineOffScreenIndicatorsState
     );
   }
 
-  void _animateTo(double offset) {
-    widget.scrollController.animateTo(
-      offset,
+  /// Jumps the scroll to bring [apptView] into view by showing its start edge.
+  void _scrollToAppointment(
+    AppointmentView apptView, {
+    required bool showStart,
+  }) {
+    final ScrollController sc = widget.scrollController;
+    if (!sc.hasClients || !sc.position.hasViewportDimension) {
+      return;
+    }
+
+    final RRect? rect = apptView.appointmentRect;
+    if (rect == null) {
+      return;
+    }
+
+    final double maxExt = sc.position.maxScrollExtent;
+    final double target = (rect.left - 20).clamp(0.0, maxExt);
+    sc.animateTo(
+      target,
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
     );
