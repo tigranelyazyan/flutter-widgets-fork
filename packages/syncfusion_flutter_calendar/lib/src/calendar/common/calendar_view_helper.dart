@@ -537,8 +537,10 @@ class CalendarViewHelper {
       case CalendarView.timelineDay:
       case CalendarView.timelineWeek:
       case CalendarView.timelineWorkWeek:
-      case CalendarView.timelineMonth:
         return 30;
+      case CalendarView.timelineMonth:
+        // Taller than other timelines: month strip + 12px gap + day+date row.
+        return 65;
       case CalendarView.schedule:
         return 0;
     }

@@ -368,8 +368,61 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
 
   /// Whether a date-range extension is already in progress (debounce guard).
 
+  /// Hover/repaint for the view header when it is drawn above the
+  /// [CustomScrollViewerLayout] (sticky: month strip or week day headers).
+  late final ValueNotifier<Offset?> _stickyViewHeaderRowNotifier;
+
+  /// Whether the view header (weekday row / month day strip) is rendered in
+  /// this state, above the swipe area, instead of inside each swiped child.
+  bool get _usesStickyViewHeaderRow =>
+      widget.view == CalendarView.month ||
+      widget.view == CalendarView.week ||
+      widget.view == CalendarView.workWeek;
+
+  /// Height of the row pinned above the [CustomScrollViewerLayout] when
+  /// [_usesStickyViewHeaderRow] is true.
+  double get _stickyViewHeaderRowHeight {
+    if (!_usesStickyViewHeaderRow) {
+      return 0.0;
+    }
+    return CalendarViewHelper.getViewHeaderHeight(
+      widget.calendar.viewHeaderHeight,
+      widget.view,
+    );
+  }
+
+  /// Height of the swiped body area (below the optional sticky view header).
+  double get _viewBodyHeightBelowStickyHeader {
+    if (!_usesStickyViewHeaderRow) {
+      return widget.height;
+    }
+    final double strip = _stickyViewHeaderRowHeight;
+    if (strip <= 0) {
+      return widget.height;
+    }
+    return widget.height - strip;
+  }
+
+  /// Month grid or day/week view height passed to each [_CalendarView] when
+  /// the view header is not embedded in the child.
+  double get _calendarViewContentHeight => _viewBodyHeightBelowStickyHeader;
+
+  /// Whether the child [_CalendarView] should not paint the view header, because
+  /// this [CustomCalendarScrollView] draws it in a sticky row.
+  bool get _omitEmbeddedViewHeader {
+    if (widget.view == CalendarView.week ||
+        widget.view == CalendarView.workWeek) {
+      return _stickyViewHeaderRowHeight > 0;
+    }
+    if (widget.view == CalendarView.month) {
+      return _stickyViewHeaderRowHeight > 0;
+    }
+    return false;
+  }
+
   @override
   void initState() {
+    _stickyViewHeaderRowNotifier = ValueNotifier<Offset?>(null);
     _dragDetails = ValueNotifier<_DragPaintDetails>(
       _DragPaintDetails(position: ValueNotifier<Offset?>(null)),
     );
@@ -654,8 +707,12 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
       leftPosition = -widget.width;
       rightPosition = -widget.width;
     } else {
-      topPosition = -widget.height;
-      bottomPosition = -widget.height;
+      final double navPanelHeight =
+          widget.view == CalendarView.month
+              ? _viewBodyHeightBelowStickyHeader
+              : widget.height;
+      topPosition = -navPanelHeight;
+      bottomPosition = -navPanelHeight;
     }
 
     final bool isDayView = CalendarViewHelper.isDayView(
@@ -814,6 +871,113 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
       ),
     );
 
+    final Widget mainStack = Stack(
+      children: <Widget>[
+        Positioned(
+          left: leftPosition,
+          right: rightPosition,
+          bottom: bottomPosition,
+          top: topPosition,
+          child: FocusScope(
+            node: _focusNode,
+            onKeyEvent: _onKeyDown,
+            child:
+                isTimelineView
+                    ? Listener(
+                      onPointerSignal: _handlePointerSignal,
+                      child: RawGestureDetector(
+                        gestures: <Type, GestureRecognizerFactory>{
+                          HorizontalDragGestureRecognizer:
+                              GestureRecognizerFactoryWithHandlers<
+                                HorizontalDragGestureRecognizer
+                              >(() => HorizontalDragGestureRecognizer(), (
+                                HorizontalDragGestureRecognizer instance,
+                              ) {
+                                instance.onUpdate = (
+                                  DragUpdateDetails details,
+                                ) {
+                                  _handleDragUpdate(
+                                    details,
+                                    isTimelineView,
+                                    isResourceEnabled,
+                                    isMonthView,
+                                    viewHeaderHeight,
+                                    timeLabelWidth,
+                                    resourceItemHeight,
+                                    weekNumberPanelWidth,
+                                    isNeedDragAndDrop,
+                                    resourceViewSize,
+                                  );
+                                };
+                                instance.onStart = (DragStartDetails details) {
+                                  _handleDragStart(
+                                    details,
+                                    isNeedDragAndDrop,
+                                    isTimelineView,
+                                    isResourceEnabled,
+                                    viewHeaderHeight,
+                                    timeLabelWidth,
+                                    resourceViewSize,
+                                  );
+                                };
+                                instance.onEnd = (DragEndDetails details) {
+                                  _handleDragEnd(
+                                    details,
+                                    isTimelineView,
+                                    isResourceEnabled,
+                                    isMonthView,
+                                    viewHeaderHeight,
+                                    timeLabelWidth,
+                                    weekNumberPanelWidth,
+                                    isNeedDragAndDrop,
+                                  );
+                                };
+                                instance.onCancel = _handleDragCancel;
+                              }),
+                        },
+                        behavior: HitTestBehavior.opaque,
+                        child: customScrollWidget,
+                      ),
+                    )
+                    : customScrollWidget,
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          top: 0,
+          child: IgnorePointer(
+            child: RepaintBoundary(
+              child: _DraggingAppointmentWidget(
+                _dragDetails,
+                widget.isRTL,
+                widget.textScaleFactor,
+                widget.isMobilePlatform,
+                AppointmentHelper.getAppointmentTextStyle(
+                  widget.calendar.appointmentTextStyle,
+                  widget.view,
+                  widget.themeData,
+                ),
+                widget.calendar.dragAndDropSettings,
+                widget.view,
+                _updateCalendarStateDetails.allDayPanelHeight,
+                viewHeaderHeight,
+                timeLabelWidth,
+                resourceItemHeight,
+                widget.calendarTheme,
+                widget.calendar,
+                widget.width,
+                _usesStickyViewHeaderRow
+                    ? _viewBodyHeightBelowStickyHeader
+                    : widget.height,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+
     return GestureDetector(
       onLongPressStart: (LongPressStartDetails details) {
         _handleLongPressStart(
@@ -854,111 +1018,63 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
                 );
               }
               : null,
-      child: Stack(
-        children: <Widget>[
-          Positioned(
-            left: leftPosition,
-            right: rightPosition,
-            bottom: bottomPosition,
-            top: topPosition,
-            child: FocusScope(
-              node: _focusNode,
-              onKeyEvent: _onKeyDown,
-              child:
-                  isTimelineView
-                      ? Listener(
-                        onPointerSignal: _handlePointerSignal,
-                        child: RawGestureDetector(
-                          gestures: <Type, GestureRecognizerFactory>{
-                            HorizontalDragGestureRecognizer:
-                                GestureRecognizerFactoryWithHandlers<
-                                  HorizontalDragGestureRecognizer
-                                >(() => HorizontalDragGestureRecognizer(), (
-                                  HorizontalDragGestureRecognizer instance,
-                                ) {
-                                  instance.onUpdate = (
-                                    DragUpdateDetails details,
-                                  ) {
-                                    _handleDragUpdate(
-                                      details,
-                                      isTimelineView,
-                                      isResourceEnabled,
-                                      isMonthView,
-                                      viewHeaderHeight,
-                                      timeLabelWidth,
-                                      resourceItemHeight,
-                                      weekNumberPanelWidth,
-                                      isNeedDragAndDrop,
-                                      resourceViewSize,
-                                    );
-                                  };
-                                  instance.onStart = (
-                                    DragStartDetails details,
-                                  ) {
-                                    _handleDragStart(
-                                      details,
-                                      isNeedDragAndDrop,
-                                      isTimelineView,
-                                      isResourceEnabled,
-                                      viewHeaderHeight,
-                                      timeLabelWidth,
-                                      resourceViewSize,
-                                    );
-                                  };
-                                  instance.onEnd = (DragEndDetails details) {
-                                    _handleDragEnd(
-                                      details,
-                                      isTimelineView,
-                                      isResourceEnabled,
-                                      isMonthView,
-                                      viewHeaderHeight,
-                                      timeLabelWidth,
-                                      weekNumberPanelWidth,
-                                      isNeedDragAndDrop,
-                                    );
-                                  };
-                                  instance.onCancel = _handleDragCancel;
-                                }),
-                          },
-                          behavior: HitTestBehavior.opaque,
-                          child: customScrollWidget,
-                        ),
-                      )
-                      : customScrollWidget,
-            ),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            top: 0,
-            child: IgnorePointer(
-              child: RepaintBoundary(
-                child: _DraggingAppointmentWidget(
-                  _dragDetails,
-                  widget.isRTL,
-                  widget.textScaleFactor,
-                  widget.isMobilePlatform,
-                  AppointmentHelper.getAppointmentTextStyle(
-                    widget.calendar.appointmentTextStyle,
-                    widget.view,
-                    widget.themeData,
-                  ),
-                  widget.calendar.dragAndDropSettings,
-                  widget.view,
-                  _updateCalendarStateDetails.allDayPanelHeight,
-                  viewHeaderHeight,
-                  timeLabelWidth,
-                  resourceItemHeight,
-                  widget.calendarTheme,
-                  widget.calendar,
-                  widget.width,
-                  widget.height,
-                ),
+      child:
+          _usesStickyViewHeaderRow
+              ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _buildStickyViewHeaderRow(context),
+                  Expanded(child: mainStack),
+                ],
+              )
+              : mainStack,
+    );
+  }
+
+  Widget _buildStickyViewHeaderRow(BuildContext context) {
+    final double h = _stickyViewHeaderRowHeight;
+    if (h <= 0) {
+      return const SizedBox.shrink();
+    }
+    final bool isRTL = CalendarViewHelper.isRTLLayout(context);
+    return SizedBox(
+      height: h,
+      child: Container(
+        color:
+            widget.calendar.viewHeaderStyle.backgroundColor ??
+            widget.calendarTheme.viewHeaderBackgroundColor,
+        child: RepaintBoundary(
+          child: CustomPaint(
+            painter: _ViewHeaderViewPainter(
+              _visibleDates,
+              widget.view,
+              widget.calendar.viewHeaderStyle,
+              widget.calendar.timeSlotViewSettings,
+              CalendarViewHelper.getTimeLabelWidth(
+                widget.calendar.timeSlotViewSettings.timeRulerSize,
+                widget.view,
               ),
+              h,
+              widget.calendar.monthViewSettings,
+              isRTL,
+              widget.locale,
+              widget.calendarTheme,
+              widget.themeData,
+              widget.calendar.todayHighlightColor ??
+                  widget.calendarTheme.todayHighlightColor,
+              widget.calendar.todayTextStyle,
+              widget.calendar.cellBorderColor,
+              widget.calendar.minDate,
+              widget.calendar.maxDate,
+              _stickyViewHeaderRowNotifier,
+              widget.textScaleFactor,
+              widget.calendar.showWeekNumber,
+              widget.isMobilePlatform,
+              widget.calendar.weekNumberStyle,
+              widget.localizations,
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -972,6 +1088,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
     _animationController.dispose();
     _animation.removeListener(animationListener);
     _focusNode.dispose();
+    _stickyViewHeaderRowNotifier.dispose();
     super.dispose();
   }
 
@@ -1030,8 +1147,9 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
       _dragDifferenceOffset = Offset(xPosition, yPosition);
     } else if (widget.view == CalendarView.month) {
       xPosition = appointmentPosition.dx - details.dx;
-      yPosition = appointmentPosition.dy + viewHeaderHeight;
-      yPosition = yPosition - details.dy;
+      // Weekday header is outside [_CalendarView]; grid coordinates are
+      // already body-local.
+      yPosition = appointmentPosition.dy - details.dy;
       _dragDifferenceOffset = Offset(xPosition, yPosition);
     } else {
       final double allDayHeight =
@@ -3658,7 +3776,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         widget.view,
         _previousViewVisibleDates,
         widget.width,
-        widget.height,
+        _calendarViewContentHeight,
         widget.agendaSelectedDate,
         widget.locale,
         widget.calendarTheme,
@@ -3687,6 +3805,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         (UpdateCalendarStateDetails details) {
           _getCalendarViewStateDetails(details);
         },
+        omitEmbeddedViewHeader: _omitEmbeddedViewHeader,
         key: _previousViewKey,
       );
       _currentView = _CalendarView(
@@ -3694,7 +3813,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         widget.view,
         _visibleDates,
         widget.width,
-        widget.height,
+        _calendarViewContentHeight,
         widget.agendaSelectedDate,
         widget.locale,
         widget.calendarTheme,
@@ -3720,6 +3839,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         (UpdateCalendarStateDetails details) {
           _getCalendarViewStateDetails(details);
         },
+        omitEmbeddedViewHeader: _omitEmbeddedViewHeader,
         key: _currentViewKey,
       );
       _nextView = _CalendarView(
@@ -3727,7 +3847,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         widget.view,
         _nextViewVisibleDates,
         widget.width,
-        widget.height,
+        _calendarViewContentHeight,
         widget.agendaSelectedDate,
         widget.locale,
         widget.calendarTheme,
@@ -3756,6 +3876,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         (UpdateCalendarStateDetails details) {
           _getCalendarViewStateDetails(details);
         },
+        omitEmbeddedViewHeader: _omitEmbeddedViewHeader,
         key: _nextViewKey,
       );
 
@@ -3814,7 +3935,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         widget.view,
         visibleDates,
         widget.width,
-        widget.height,
+        _calendarViewContentHeight,
         widget.agendaSelectedDate,
         widget.locale,
         widget.calendarTheme,
@@ -3840,6 +3961,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         (UpdateCalendarStateDetails details) {
           _getCalendarViewStateDetails(details);
         },
+        omitEmbeddedViewHeader: _omitEmbeddedViewHeader,
         key: viewKey,
       );
 
@@ -3857,7 +3979,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
           widget.view,
           visibleDates,
           widget.width,
-          widget.height,
+          _calendarViewContentHeight,
           widget.agendaSelectedDate,
           widget.locale,
           widget.calendarTheme,
@@ -3883,6 +4005,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
           (UpdateCalendarStateDetails details) {
             _getCalendarViewStateDetails(details);
           },
+          omitEmbeddedViewHeader: _omitEmbeddedViewHeader,
           key: viewKey,
         );
         _children[index] = view;
@@ -3894,7 +4017,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
           widget.view,
           visibleDates,
           widget.width,
-          widget.height,
+          _calendarViewContentHeight,
           widget.agendaSelectedDate,
           widget.locale,
           widget.calendarTheme,
@@ -3920,6 +4043,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
           (UpdateCalendarStateDetails details) {
             _getCalendarViewStateDetails(details);
           },
+          omitEmbeddedViewHeader: _omitEmbeddedViewHeader,
           key: viewKey,
         );
 
@@ -3961,7 +4085,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         widget.view,
         visibleDates,
         widget.width,
-        widget.height,
+        _calendarViewContentHeight,
         widget.agendaSelectedDate,
         widget.locale,
         widget.calendarTheme,
@@ -3987,6 +4111,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         (UpdateCalendarStateDetails details) {
           _getCalendarViewStateDetails(details);
         },
+        omitEmbeddedViewHeader: _omitEmbeddedViewHeader,
         key: viewKey,
       );
 
@@ -3997,7 +4122,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         widget.view,
         visibleDates,
         widget.width,
-        widget.height,
+        _calendarViewContentHeight,
         widget.agendaSelectedDate,
         widget.locale,
         widget.calendarTheme,
@@ -4023,6 +4148,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         (UpdateCalendarStateDetails details) {
           _getCalendarViewStateDetails(details);
         },
+        omitEmbeddedViewHeader: _omitEmbeddedViewHeader,
         key: viewKey,
       );
 
@@ -4154,12 +4280,26 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
   }
 
   CalendarDetails? _getCalendarDetails(Offset position) {
+    Offset childPosition = position;
+    if (_usesStickyViewHeaderRow) {
+      final double strip = _stickyViewHeaderRowHeight;
+      if (strip > 0) {
+        if (position.dy < strip) {
+          return null;
+        }
+        childPosition = Offset(position.dx, position.dy - strip);
+      }
+    }
     if (_currentChildIndex == 0) {
-      return _previousViewKey.currentState?._getCalendarViewDetails(position);
+      return _previousViewKey.currentState?._getCalendarViewDetails(
+        childPosition,
+      );
     } else if (_currentChildIndex == 1) {
-      return _currentViewKey.currentState?._getCalendarViewDetails(position);
+      return _currentViewKey.currentState?._getCalendarViewDetails(
+        childPosition,
+      );
     } else if (_currentChildIndex == 2) {
-      return _nextViewKey.currentState?._getCalendarViewDetails(position);
+      return _nextViewKey.currentState?._getCalendarViewDetails(childPosition);
     } else {
       return null;
     }
@@ -4317,7 +4457,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         widget.view == CalendarView.month) {
       // update the bottom to top swiping
       _tween.begin = 0;
-      _tween.end = -widget.height;
+      _tween.end = -_viewBodyHeightBelowStickyHeader;
     } else {
       // update the right to left swiping
       _tween.begin = 0;
@@ -4374,7 +4514,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         widget.view == CalendarView.month) {
       // update the top to bottom swiping
       _tween.begin = 0;
-      _tween.end = widget.height;
+      _tween.end = _viewBodyHeightBelowStickyHeader;
     } else {
       // update the left to right swiping
       _tween.begin = 0;
@@ -6385,10 +6525,11 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
         if (widget.calendar.monthViewSettings.navigationDirection ==
                 MonthNavigationDirection.vertical &&
             !CalendarViewHelper.isTimelineView(widget.view)) {
+          final double navH = _viewBodyHeightBelowStickyHeader;
           // condition to check and update the bottom to top swiping
-          if (-_position >= widget.height / 2) {
+          if (-_position >= navH / 2) {
             _tween.begin = _position;
-            _tween.end = -widget.height;
+            _tween.end = -navH;
 
             // Resets the controller to forward it again, the animation will
             // forward only from the dismissed state
@@ -6405,8 +6546,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
             _updateCurrentViewVisibleDates(isNextView: true);
           }
           // fling the view to bottom to top
-          else if (-dragEndDetails.velocity.pixelsPerSecond.dy >
-              widget.height) {
+          else if (-dragEndDetails.velocity.pixelsPerSecond.dy > navH) {
             if (!DateTimeHelper.canMoveToNextView(
               widget.view,
               widget.calendar.monthViewSettings.numberOfWeeksInView,
@@ -6424,7 +6564,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
             }
 
             _tween.begin = _position;
-            _tween.end = -widget.height;
+            _tween.end = -navH;
 
             // Resets the controller to forward it again, the animation will
             // forward only from the dismissed state
@@ -6444,9 +6584,9 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
             _updateCurrentViewVisibleDates(isNextView: true);
           }
           // condition to check and update the top to bottom swiping
-          else if (_position >= widget.height / 2) {
+          else if (_position >= navH / 2) {
             _tween.begin = _position;
-            _tween.end = widget.height;
+            _tween.end = navH;
 
             // Resets the controller to forward it again, the animation will
             // forward only from the dismissed state
@@ -6463,7 +6603,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
             _updateCurrentViewVisibleDates();
           }
           // fling the view to top to bottom
-          else if (dragEndDetails.velocity.pixelsPerSecond.dy > widget.height) {
+          else if (dragEndDetails.velocity.pixelsPerSecond.dy > navH) {
             if (!DateTimeHelper.canMoveToPreviousView(
               widget.view,
               widget.calendar.monthViewSettings.numberOfWeeksInView,
@@ -6481,7 +6621,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
             }
 
             _tween.begin = _position;
-            _tween.end = widget.height;
+            _tween.end = navH;
 
             // Resets the controller to forward it again, the animation will
             // forward only from the dismissed state
@@ -6501,7 +6641,7 @@ class _CustomCalendarScrollViewState extends State<CustomCalendarScrollView>
             _updateCurrentViewVisibleDates();
           }
           // condition to check and revert the bottom to top swiping
-          else if (_position.abs() <= widget.height / 2) {
+          else if (_position.abs() <= navH / 2) {
             _tween.begin = _position;
             _tween.end = 0.0;
 
@@ -6631,8 +6771,14 @@ class _CalendarView extends StatefulWidget {
     this.dragDetails,
     this.updateCalendarState,
     this.getCalendarState, {
+    this.omitEmbeddedViewHeader = false,
     Key? key,
   }) : super(key: key);
+
+  /// When `true`, the view header row is not painted here; the parent
+  /// [CustomCalendarScrollView] draws it as a sticky row above the swipe area
+  /// (month strip or week/work-week day names).
+  final bool omitEmbeddedViewHeader;
 
   final List<DateTime> visibleDates;
   final List<CalendarTimeRegion>? regions;
@@ -7661,6 +7807,10 @@ class _CalendarViewState extends State<_CalendarView>
     );
     if (isDayView) {
       topPosition = _allDayHeight;
+    } else if (widget.omitEmbeddedViewHeader) {
+      // View header is drawn in [CustomCalendarScrollView]; all-day runs from
+      // the top of this child.
+      topPosition = 0;
     }
 
     if (_allDayHeight == 0 ||
@@ -9876,6 +10026,43 @@ class _CalendarViewState extends State<_CalendarView>
       widget.calendar.viewHeaderHeight,
       widget.view,
     );
+    if (widget.omitEmbeddedViewHeader) {
+      return Stack(
+        children: <Widget>[
+          Positioned(
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+            child: RepaintBoundary(
+              child: _CalendarMultiChildContainer(
+                width: widget.width,
+                height: widget.height,
+                builder: widget.calendar.monthCellBuilder,
+                children: <Widget>[
+                  RepaintBoundary(child: _getMonthWidget(isRTL, widget.height)),
+                  RepaintBoundary(
+                    child: _addAppointmentPainter(widget.width, widget.height),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: _addSelectionView(),
+                size: Size(widget.width, widget.height),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     final double height = widget.height - viewHeaderHeight;
     return Stack(
       children: <Widget>[
@@ -10006,13 +10193,15 @@ class _CalendarViewState extends State<_CalendarView>
       widget.calendar.timeSlotViewSettings.nonWorkingDays,
       widget.calendar.monthViewSettings.numberOfWeeksInView,
     );
-    final double viewHeaderHeight =
+    final double viewHeaderHeightFromSettings =
         isDayView
             ? 0
             : CalendarViewHelper.getViewHeaderHeight(
               widget.calendar.viewHeaderHeight,
               widget.view,
             );
+    final double viewHeaderHeightForPainter =
+        widget.omitEmbeddedViewHeader ? 0.0 : viewHeaderHeightFromSettings;
     final double allDayPanelHeight =
         _isExpanded
             ? _updateCalendarStateDetails.allDayPanelHeight
@@ -10040,12 +10229,17 @@ class _CalendarViewState extends State<_CalendarView>
             ? _timeIntervalHeight *
                 (_horizontalLinesCount! * widget.visibleDates.length)
             : widget.width;
-    final double overAllHeight =
-        isTimelineView || widget.view == CalendarView.month
-            ? widget.height
-            : viewHeaderHeight +
-                allDayPanelHeight +
-                (_timeIntervalHeight * _horizontalLinesCount!);
+    final double overAllHeight;
+    if (isTimelineView || widget.view == CalendarView.month) {
+      overAllHeight = widget.height;
+    } else if (widget.omitEmbeddedViewHeader) {
+      overAllHeight = widget.height;
+    } else {
+      overAllHeight =
+          viewHeaderHeightFromSettings +
+          allDayPanelHeight +
+          (_timeIntervalHeight * _horizontalLinesCount!);
+    }
 
     return Positioned(
       left: 0,
@@ -10077,7 +10271,7 @@ class _CalendarViewState extends State<_CalendarView>
                   widget.themeData,
                 ),
                 allDayPanelHeight,
-                viewHeaderHeight,
+                viewHeaderHeightForPainter,
                 timeLabelWidth,
                 _timeIntervalHeight,
                 _scrollController,
@@ -10135,57 +10329,62 @@ class _CalendarViewState extends State<_CalendarView>
 
     final double allDayExpanderHeight =
         panelHeight * _allDayExpanderAnimation!.value;
+    final bool hideEmbeddedViewHeader = widget.omitEmbeddedViewHeader;
+    final double listViewTop =
+        hideEmbeddedViewHeader && !isDayView
+            ? _allDayHeight + allDayExpanderHeight
+            : (isDayView
+                ? viewHeaderHeight + allDayExpanderHeight
+                : viewHeaderHeight + _allDayHeight + allDayExpanderHeight);
     return Stack(
       children: <Widget>[
         _addAllDayAppointmentPanel(widget.calendarTheme, isCurrentView),
-        Positioned(
-          left: isRTL ? widget.width - viewHeaderWidth : 0,
-          top: 0,
-          right: isRTL ? 0 : widget.width - viewHeaderWidth,
-          height: actualViewHeaderHeight,
-          child: Container(
-            color:
-                widget.calendar.viewHeaderStyle.backgroundColor ??
-                widget.calendarTheme.viewHeaderBackgroundColor,
-            child: RepaintBoundary(
-              child: CustomPaint(
-                painter: _ViewHeaderViewPainter(
-                  widget.visibleDates,
-                  widget.view,
-                  widget.calendar.viewHeaderStyle,
-                  widget.calendar.timeSlotViewSettings,
-                  CalendarViewHelper.getTimeLabelWidth(
-                    widget.calendar.timeSlotViewSettings.timeRulerSize,
+        if (!hideEmbeddedViewHeader)
+          Positioned(
+            left: isRTL ? widget.width - viewHeaderWidth : 0,
+            top: 0,
+            right: isRTL ? 0 : widget.width - viewHeaderWidth,
+            height: actualViewHeaderHeight,
+            child: Container(
+              color:
+                  widget.calendar.viewHeaderStyle.backgroundColor ??
+                  widget.calendarTheme.viewHeaderBackgroundColor,
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  painter: _ViewHeaderViewPainter(
+                    widget.visibleDates,
                     widget.view,
+                    widget.calendar.viewHeaderStyle,
+                    widget.calendar.timeSlotViewSettings,
+                    CalendarViewHelper.getTimeLabelWidth(
+                      widget.calendar.timeSlotViewSettings.timeRulerSize,
+                      widget.view,
+                    ),
+                    actualViewHeaderHeight,
+                    widget.calendar.monthViewSettings,
+                    isRTL,
+                    widget.locale,
+                    widget.calendarTheme,
+                    widget.themeData,
+                    widget.calendar.todayHighlightColor ??
+                        widget.calendarTheme.todayHighlightColor,
+                    widget.calendar.todayTextStyle,
+                    widget.calendar.cellBorderColor,
+                    widget.calendar.minDate,
+                    widget.calendar.maxDate,
+                    _viewHeaderNotifier,
+                    widget.textScaleFactor,
+                    widget.calendar.showWeekNumber,
+                    widget.isMobilePlatform,
+                    widget.calendar.weekNumberStyle,
+                    widget.localizations,
                   ),
-                  actualViewHeaderHeight,
-                  widget.calendar.monthViewSettings,
-                  isRTL,
-                  widget.locale,
-                  widget.calendarTheme,
-                  widget.themeData,
-                  widget.calendar.todayHighlightColor ??
-                      widget.calendarTheme.todayHighlightColor,
-                  widget.calendar.todayTextStyle,
-                  widget.calendar.cellBorderColor,
-                  widget.calendar.minDate,
-                  widget.calendar.maxDate,
-                  _viewHeaderNotifier,
-                  widget.textScaleFactor,
-                  widget.calendar.showWeekNumber,
-                  widget.isMobilePlatform,
-                  widget.calendar.weekNumberStyle,
-                  widget.localizations,
                 ),
               ),
             ),
           ),
-        ),
         Positioned(
-          top:
-              isDayView
-                  ? viewHeaderHeight + allDayExpanderHeight
-                  : viewHeaderHeight + _allDayHeight + allDayExpanderHeight,
+          top: listViewTop,
           left: 0,
           right: 0,
           bottom: 0,
@@ -12643,8 +12842,6 @@ class _CalendarViewState extends State<_CalendarView>
       return;
     }
 
-    _hoveringDate = hoverDate;
-
     if (_calendarCellNotifier.value != null) {
       _calendarCellNotifier.value = null;
     }
@@ -12669,7 +12866,8 @@ class _CalendarViewState extends State<_CalendarView>
       }
     }
 
-    _viewHeaderNotifier.value = Offset(xPosition, yPosition);
+    // No hover highlight on view header day cells; clear header hover state.
+    _removeViewHeaderHovering();
   }
 
   void _updateDraggingMouseCursor(bool isDragging) {
@@ -13286,7 +13484,8 @@ class _CalendarViewState extends State<_CalendarView>
       }
     }
 
-    _calendarCellNotifier.value = Offset(xPosition, yPosition);
+    // Time / month / timeline cells: do not set [_calendarCellNotifier] — no
+    // hover highlight on day columns or month cells.
   }
 
   void _pointerEnterEvent(PointerEnterEvent event) {

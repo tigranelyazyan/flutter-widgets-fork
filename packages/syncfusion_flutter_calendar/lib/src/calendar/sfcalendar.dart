@@ -49,6 +49,18 @@ const Duration _kSplashFadeDuration = Duration(milliseconds: 500);
 
 typedef _CalendarHeaderCallback = void Function(double width);
 
+/// Builder for a parent [CustomScrollView] so the calendar **navigation
+/// header** can pin in the same scroll as the page (e.g. when replacing
+/// [SingleChildScrollView] + [Column] with one [CustomScrollView]).
+///
+/// The [calendarSlivers] list usually contains a
+/// [SliverPersistentHeader] (pinned) for the month navigation bar and a
+/// [SliverToBoxAdapter] for the rest of the calendar. Combine them with
+/// your own slivers (e.g. [SliverToBoxAdapter] for widgets **above** the
+/// calendar) in the returned scroll view.
+typedef SfCalendarPinnableScrollViewBuilder =
+    Widget Function(BuildContext context, List<Widget> calendarSlivers);
+
 /// A material design calendar.
 ///
 /// Used to scheduling and managing events.
@@ -228,6 +240,7 @@ class SfCalendar extends StatefulWidget {
     this.onDragStart,
     this.onDragUpdate,
     this.onDragEnd,
+    this.pinnableScrollViewBuilder,
   }) : assert(firstDayOfWeek >= 1 && firstDayOfWeek <= 7),
        assert(headerHeight >= 0),
        assert(viewHeaderHeight >= -1),
@@ -305,6 +318,22 @@ class SfCalendar extends StatefulWidget {
   ///
   /// ```
   final LoadMoreWidgetBuilder? loadMoreWidgetBuilder;
+
+  /// Wraps the calendar in a scrollable you provide so the **top navigation
+  /// bar** (month, arrows, view switcher) can stay **pinned** while the rest
+  /// of the page scrolls in one [CustomScrollView].
+  ///
+  /// **Not** used when [view] is [CalendarView.schedule] (the schedule
+  /// layout is unchanged). When non-null, [SfCalendar] does **not** build the
+  /// default [Stack] + internal scroll; it passes pre-built slivers to this
+  /// builder. The returned widget should be a [CustomScrollView] (or a
+  /// [ScrollView] with slivers) that **includes** the built-in slivers in
+  /// its `slivers` list, optionally prefixed with your own
+  /// slivers (e.g. a [SliverToBoxAdapter] for content above the calendar).
+  ///
+  /// Give [SfCalendar] a **bounded** max height in the parent (e.g. inside
+  /// [Expanded] in a [Column]).
+  final SfCalendarPinnableScrollViewBuilder? pinnableScrollViewBuilder;
 
   /// The list of [CalendarView]s that should be displayed in the header for
   /// quick navigation.
@@ -2726,6 +2755,12 @@ class SfCalendar extends StatefulWidget {
         loadMoreWidgetBuilder,
       ),
     );
+    properties.add(
+      DiagnosticsProperty<SfCalendarPinnableScrollViewBuilder>(
+        'pinnableScrollViewBuilder',
+        pinnableScrollViewBuilder,
+      ),
+    );
     properties.add(StringProperty('headerDateFormat', headerDateFormat));
     properties.add(
       DiagnosticsProperty<Decoration>(
@@ -3295,6 +3330,27 @@ class _SfCalendarState extends State<SfCalendar>
             _view == CalendarView.month && widget.monthViewSettings.showAgenda
                 ? _getMonthAgendaHeight()
                 : 0;
+
+        if (widget.pinnableScrollViewBuilder != null &&
+            _view != CalendarView.schedule) {
+          return GestureDetector(
+            onTap: _removeDatePicker,
+            child: Container(
+              width: _minWidth,
+              height: _minHeight,
+              color: widget.backgroundColor ?? _calendarTheme.backgroundColor,
+              child: widget.pinnableScrollViewBuilder!(
+                context,
+                _buildPinnableCalendarSlivers(
+                  agendaHeight,
+                  height,
+                  _minWidth,
+                  _isRTL,
+                ),
+              ),
+            ),
+          );
+        }
 
         return GestureDetector(
           child: Container(
@@ -9339,6 +9395,7 @@ class _SfCalendarState extends State<SfCalendar>
     double resourceViewSize,
     double height,
     bool isRTL,
+    double mainHeaderOffset,
   ) {
     if (!isResourceEnabled) {
       return Positioned(
@@ -9385,8 +9442,8 @@ class _SfCalendarState extends State<SfCalendar>
             width: 0.5,
             top:
                 _controller.view == CalendarView.timelineMonth
-                    ? widget.headerHeight
-                    : widget.headerHeight + viewHeaderHeight,
+                    ? mainHeaderOffset
+                    : mainHeaderOffset + viewHeaderHeight,
             height:
                 _controller.view == CalendarView.timelineMonth
                     ? viewHeaderHeight
@@ -9396,7 +9453,7 @@ class _SfCalendarState extends State<SfCalendar>
           Positioned(
             left: 0,
             width: resourceViewSize,
-            top: widget.headerHeight + top,
+            top: mainHeaderOffset + top,
             bottom: 0,
             child: MouseRegion(
               onEnter: (PointerEnterEvent event) {
@@ -9405,7 +9462,7 @@ class _SfCalendarState extends State<SfCalendar>
                   false,
                   isRTL,
                   null,
-                  top + widget.headerHeight,
+                  top + mainHeaderOffset,
                   0,
                   isResourceEnabled,
                 );
@@ -9417,7 +9474,7 @@ class _SfCalendarState extends State<SfCalendar>
                   false,
                   isRTL,
                   null,
-                  top + widget.headerHeight,
+                  top + mainHeaderOffset,
                   0,
                   isResourceEnabled,
                 );
@@ -9603,12 +9660,69 @@ class _SfCalendarState extends State<SfCalendar>
     );
   }
 
+  Widget _buildCalendarNavigationHeader(double width, bool isRTL) {
+    final DateTime currentViewDate =
+        _currentViewVisibleDates[(_currentViewVisibleDates.length / 2)
+            .truncate()];
+    return Container(
+      color:
+          widget.headerStyle.backgroundColor ??
+          _calendarTheme.headerBackgroundColor,
+      child: _CalendarHeaderView(
+        _currentViewVisibleDates,
+        widget.headerStyle,
+        currentViewDate,
+        _view,
+        widget.monthViewSettings.numberOfWeeksInView,
+        _calendarTheme,
+        isRTL,
+        _locale,
+        widget.showNavigationArrow,
+        _controller,
+        widget.maxDate,
+        widget.minDate,
+        width,
+        widget.headerHeight,
+        widget.timeSlotViewSettings.nonWorkingDays,
+        widget.monthViewSettings.navigationDirection,
+        widget.showDatePickerButton,
+        widget.showTodayButton,
+        _showHeader,
+        widget.allowedViews,
+        widget.allowViewNavigation,
+        _localizations,
+        _removeDatePicker,
+        _headerUpdateNotifier,
+        _viewChangeNotifier,
+        _handleOnTapForHeader,
+        _handleOnLongPressForHeader,
+        widget.todayHighlightColor,
+        _textScaleFactor,
+        _isMobilePlatform,
+        widget.headerDateFormat,
+        !_isNeedLoadMore,
+        widget.todayTextStyle,
+        widget.showWeekNumber,
+        widget.weekNumberStyle,
+        _timelineMonthWeekNumberNotifier,
+        widget.cellBorderColor,
+        widget.timeSlotViewSettings.numberOfDaysInView,
+        widget.headerNavigationWidget,
+        widget.headerNavigationWidgetWidth,
+      ),
+    );
+  }
+
+  /// When [omitTopHeader] is true, the top navigation [Stack] is omitted and
+  /// the returned subtree expects [mainHeaderOffset] `0` in positioned
+  /// children (used by [pinnableScrollViewBuilder]).
   Widget _addChildren(
     double agendaHeight,
     double height,
     double width,
-    bool isRTL,
-  ) {
+    bool isRTL, {
+    bool omitTopHeader = false,
+  }) {
     final bool isResourceEnabled = CalendarViewHelper.isResourceEnabled(
       widget.dataSource,
       _view,
@@ -9618,67 +9732,27 @@ class _SfCalendarState extends State<SfCalendar>
             ? (widget.resourceViewSettings.width ??
                 widget.resourceViewSettings.size)
             : 0;
-    final DateTime currentViewDate =
-        _currentViewVisibleDates[(_currentViewVisibleDates.length / 2)
-            .truncate()];
+    final double mainHeaderOffset =
+        omitTopHeader ? 0.0 : widget.headerHeight;
 
     final List<Widget> children = <Widget>[
-      Positioned(
-        top: 0,
-        right: 0,
-        left: 0,
-        height: widget.headerHeight,
-        child: Container(
-          color:
-              widget.headerStyle.backgroundColor ??
-              _calendarTheme.headerBackgroundColor,
-          child: _CalendarHeaderView(
-            _currentViewVisibleDates,
-            widget.headerStyle,
-            currentViewDate,
-            _view,
-            widget.monthViewSettings.numberOfWeeksInView,
-            _calendarTheme,
-            isRTL,
-            _locale,
-            widget.showNavigationArrow,
-            _controller,
-            widget.maxDate,
-            widget.minDate,
-            width,
-            widget.headerHeight,
-            widget.timeSlotViewSettings.nonWorkingDays,
-            widget.monthViewSettings.navigationDirection,
-            widget.showDatePickerButton,
-            widget.showTodayButton,
-            _showHeader,
-            widget.allowedViews,
-            widget.allowViewNavigation,
-            _localizations,
-            _removeDatePicker,
-            _headerUpdateNotifier,
-            _viewChangeNotifier,
-            _handleOnTapForHeader,
-            _handleOnLongPressForHeader,
-            widget.todayHighlightColor,
-            _textScaleFactor,
-            _isMobilePlatform,
-            widget.headerDateFormat,
-            !_isNeedLoadMore,
-            widget.todayTextStyle,
-            widget.showWeekNumber,
-            widget.weekNumberStyle,
-            _timelineMonthWeekNumberNotifier,
-            widget.cellBorderColor,
-            widget.timeSlotViewSettings.numberOfDaysInView,
-            widget.headerNavigationWidget,
-            widget.headerNavigationWidgetWidth,
-          ),
+      if (!omitTopHeader)
+        Positioned(
+          top: 0,
+          right: 0,
+          left: 0,
+          height: widget.headerHeight,
+          child: _buildCalendarNavigationHeader(width, isRTL),
         ),
+      _addResourcePanel(
+        isResourceEnabled,
+        resourceViewSize,
+        height,
+        isRTL,
+        mainHeaderOffset,
       ),
-      _addResourcePanel(isResourceEnabled, resourceViewSize, height, isRTL),
       _addCustomScrollView(
-        widget.headerHeight,
+        mainHeaderOffset,
         resourceViewSize,
         isRTL,
         isResourceEnabled,
@@ -9688,11 +9762,11 @@ class _SfCalendarState extends State<SfCalendar>
       ),
       _addAgendaView(
         agendaHeight,
-        widget.headerHeight + height - agendaHeight,
+        mainHeaderOffset + height - agendaHeight,
         width,
         isRTL,
       ),
-      _addDatePicker(widget.headerHeight, isRTL),
+      _addDatePicker(mainHeaderOffset, isRTL),
       _getCalendarViewPopup(),
     ];
     if (_isNeedLoadMore && widget.loadMoreWidgetBuilder != null) {
@@ -9709,6 +9783,41 @@ class _SfCalendarState extends State<SfCalendar>
       );
     }
     return Stack(children: children);
+  }
+
+  List<Widget> _buildPinnableCalendarSlivers(
+    double agendaHeight,
+    double height,
+    double width,
+    bool isRTL,
+  ) {
+    return <Widget>[
+      SliverPersistentHeader(
+        pinned: true,
+        delegate: _SfCalendarPinnedHeaderDelegate(
+          minHeight: widget.headerHeight,
+          maxHeight: widget.headerHeight,
+          child: SizedBox(
+            width: width,
+            height: widget.headerHeight,
+            child: _buildCalendarNavigationHeader(width, isRTL),
+          ),
+        ),
+      ),
+      SliverToBoxAdapter(
+        child: SizedBox(
+          width: width,
+          height: height,
+          child: _addChildren(
+            agendaHeight,
+            height,
+            width,
+            isRTL,
+            omitTopHeader: true,
+          ),
+        ),
+      ),
+    ];
   }
 
   void _removeDatePicker() {
@@ -10445,6 +10554,42 @@ class _SfCalendarState extends State<SfCalendar>
         ),
       ),
     );
+  }
+}
+
+/// Fixed-height pinned header for [pinnableScrollViewBuilder] slivers.
+class _SfCalendarPinnedHeaderDelegate
+    extends SliverPersistentHeaderDelegate {
+  const _SfCalendarPinnedHeaderDelegate({
+    required this.minHeight,
+    required this.maxHeight,
+    required this.child,
+  });
+
+  final double minHeight;
+  final double maxHeight;
+  final Widget child;
+
+  @override
+  double get minExtent => minHeight;
+
+  @override
+  double get maxExtent => maxHeight;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return child;
+  }
+
+  @override
+  bool shouldRebuild(covariant _SfCalendarPinnedHeaderDelegate oldDelegate) {
+    return minHeight != oldDelegate.minHeight ||
+        maxHeight != oldDelegate.maxHeight ||
+        child != oldDelegate.child;
   }
 }
 

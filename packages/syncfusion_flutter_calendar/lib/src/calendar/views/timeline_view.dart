@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -1425,6 +1426,29 @@ class TimelineViewHeaderView extends CustomPainter {
       _dateTextPainter = TextPainter();
   final Paint _hoverPainter = Paint();
 
+  /// Minimum height for the day + date row under the month strip (continuous).
+  static const double _kMinDayRowHeightContinuous = 20;
+
+  /// Vertical gap between the bottom of the "MMM yyyy" text and the day numbers.
+  static const double _kMonthLabelGapAboveDayRow = 8;
+
+  /// Reserves the month row from text metrics + gap, with a floor for the day row.
+  double _monthLabelRowHeight(Size size, double monthTextHeight) {
+    const double kTop = 2;
+    final double minMonth = kTop + monthTextHeight + _kMonthLabelGapAboveDayRow;
+    final double maxMonthAtMinDay = math.max(
+      0,
+      size.height - _kMinDayRowHeightContinuous,
+    );
+    if (minMonth <= maxMonthAtMinDay) {
+      return minMonth;
+    }
+    if (size.height <= minMonth + 4) {
+      return size.height * 0.5;
+    }
+    return maxMonthAtMinDay;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     canvas.clipRect(Rect.fromLTWH(0, 0, size.width, size.height));
@@ -1450,8 +1474,22 @@ class TimelineViewHeaderView extends CustomPainter {
         (visibleDates.first.month != visibleDates.last.month ||
             visibleDates.first.year != visibleDates.last.year);
 
+    double monthLabelRowForCells = 0;
     if (isContinuousMonth) {
-      _drawContinuousMonthLabels(canvas, size, childWidth);
+      final TextStyle monthLabelStyle = calendarTheme.viewHeaderDateTextStyle!
+          .copyWith(fontSize: 15, fontWeight: FontWeight.w600);
+      final TextPainter monthMeasure = TextPainter(
+        text: TextSpan(text: 'May 2000', style: monthLabelStyle),
+        textDirection: TextDirection.ltr,
+        textScaler: TextScaler.linear(textScaleFactor),
+      )..layout();
+      monthLabelRowForCells = _monthLabelRowHeight(size, monthMeasure.height);
+      _drawContinuousMonthLabels(
+        canvas,
+        size,
+        childWidth,
+        monthLabelRowForCells,
+      );
     }
 
     final TextStyle defaultThemeViewHeaderDayTextStyle = themeData
@@ -1607,6 +1645,7 @@ class TimelineViewHeaderView extends CustomPainter {
           size,
           isBlackoutDate,
           isContinuousMonth,
+          monthLabelRowForCells,
         );
       } else {
         _drawTimelineTimeSlotsViewHeader(canvas, size, childWidth, index, i);
@@ -1684,8 +1723,8 @@ class TimelineViewHeaderView extends CustomPainter {
     Canvas canvas,
     Size size,
     double childWidth,
+    double monthLabelHeight,
   ) {
-    final double monthLabelHeight = size.height * 0.4;
     final TextPainter monthPainter = TextPainter(
       textDirection: TextDirection.ltr,
       textAlign: TextAlign.left,
@@ -1719,9 +1758,13 @@ class TimelineViewHeaderView extends CustomPainter {
 
       final double xPos =
           isRTL ? size.width - ((i + 1) * childWidth) : i * childWidth;
-      const double bottomPadding = 4;
-      final double yPos =
-          (monthLabelHeight - bottomPadding - monthPainter.height) / 2;
+      // Keep the month label above the day row: 12px below the text bottom to
+      // the divider (top of the date numbers), using [TextPainter.height].
+      double yPos =
+          monthLabelHeight - _kMonthLabelGapAboveDayRow - monthPainter.height;
+      if (yPos < 0) {
+        yPos = 0;
+      }
 
       monthPainter.paint(canvas, Offset(xPos + 4, yPos));
     }
@@ -1735,16 +1778,15 @@ class TimelineViewHeaderView extends CustomPainter {
     Size size,
     bool isBlackoutDate,
     bool isContinuousMonth,
+    double monthLabelRowHeight,
   ) {
-    // When continuous, reserve the top portion for month labels.
+    // When continuous, [monthLabelRowHeight] matches [_drawContinuousMonthLabels].
     final double monthLabelHeight =
-        isContinuousMonth ? size.height * 0.4 : 0.0;
+        isContinuousMonth ? monthLabelRowHeight : 0.0;
     final double dateCellHeight = size.height - monthLabelHeight;
     final double dateCellTop = monthLabelHeight;
 
-    canvas.clipRect(
-      Rect.fromLTWH(_xPosition, 0, childWidth, size.height),
-    );
+    canvas.clipRect(Rect.fromLTWH(_xPosition, 0, childWidth, size.height));
     const double leftPadding = 2;
     final double startXPosition =
         _xPosition +
@@ -1756,10 +1798,10 @@ class TimelineViewHeaderView extends CustomPainter {
     final double startYPosition =
         dateCellTop +
         (dateCellHeight -
-            (_dayTextPainter.height > _dateTextPainter.height
-                ? _dayTextPainter.height
-                : _dateTextPainter.height)) /
-        2;
+                (_dayTextPainter.height > _dateTextPainter.height
+                    ? _dayTextPainter.height
+                    : _dateTextPainter.height)) /
+            2;
     if (viewHeaderNotifier.value != null && !isBlackoutDate) {
       _addMouseHovering(canvas, size, childWidth);
     }
@@ -1792,8 +1834,10 @@ class TimelineViewHeaderView extends CustomPainter {
     _hoverPainter.strokeWidth = 0.15;
     _hoverPainter.color = cellBorderColor ?? calendarTheme.cellBorderColor!;
     canvas.restore();
+    // Only separate day cells; do not run through the month label strip
+    // (uses the same [monthLabelHeight] as [_drawContinuousMonthLabels]).
     canvas.drawLine(
-      Offset(_xPosition, 0),
+      Offset(_xPosition, dateCellTop),
       Offset(_xPosition, size.height),
       _hoverPainter,
     );
