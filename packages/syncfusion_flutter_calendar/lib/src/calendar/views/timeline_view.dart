@@ -1534,13 +1534,6 @@ class TimelineViewHeaderView extends CustomPainter {
       calendarTheme,
     );
 
-    if (isTimelineMonth) {
-      _hoverPainter.strokeWidth = 0.15;
-      _hoverPainter.strokeCap = StrokeCap.round;
-      _hoverPainter.color = cellBorderColor ?? calendarTheme.cellBorderColor!;
-      canvas.drawLine(Offset.zero, Offset(size.width, 0), _hoverPainter);
-    }
-
     for (int i = 0; i < visibleDatesLength; i++) {
       if (i < index && !isTimelineMonth) {
         continue;
