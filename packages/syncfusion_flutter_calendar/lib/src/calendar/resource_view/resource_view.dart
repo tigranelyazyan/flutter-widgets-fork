@@ -434,7 +434,8 @@ class _ResourceViewRenderObject extends CustomCalendarRenderObject {
       widgetSize.height.isInfinite ? panelHeight : widgetSize.height,
     );
 
-    for (dynamic child = firstChild; child != null; child = childAfter(child)) {
+    double yPosition = 0;
+    for (RenderBox? child = firstChild; child != null; child = childAfter(child)) {
       child.layout(
         constraints.copyWith(
           minWidth: width,
@@ -443,7 +444,36 @@ class _ResourceViewRenderObject extends CustomCalendarRenderObject {
           maxHeight: resourceItemHeight,
         ),
       );
+      final CalendarParentData childParentData =
+          child.parentData! as CalendarParentData;
+      childParentData.offset = Offset(0, yPosition);
+      yPosition += resourceItemHeight;
     }
+  }
+
+  /// Forwards hit tests to the widgets built by
+  /// [SfCalendar.resourceViewHeaderBuilder], so they can receive pointer and
+  /// hover events.
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    RenderBox? child = lastChild;
+    while (child != null) {
+      final CalendarParentData childParentData =
+          child.parentData! as CalendarParentData;
+      final RenderBox currentChild = child;
+      final bool isHit = result.addWithPaintOffset(
+        offset: childParentData.offset,
+        position: position,
+        hitTest: (BoxHitTestResult result, Offset transformed) {
+          return currentChild.hitTest(result, position: transformed);
+        },
+      );
+      if (isHit) {
+        return true;
+      }
+      child = childParentData.previousSibling;
+    }
+    return false;
   }
 
   @override
